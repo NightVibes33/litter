@@ -36,7 +36,7 @@ jobs:
           echo "xcode=$(xcodebuild -version | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
       - name: Restore complete toolchain cache
         id: cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: build/nyxian-toolchain
           key: nyxian-upstream-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.source.outputs.nyxian }}-${{ steps.source.outputs.llvm }}-${{ steps.source.outputs.xcode }}-${{ hashFiles('tools/scripts/build-matched-nyxian-toolchain.sh', 'tools/scripts/nyxian-toolchain-provenance.py') }}
@@ -80,7 +80,7 @@ jobs:
           PY
       - name: Save complete toolchain cache
         if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: build/nyxian-toolchain
           key: ${{ steps.cache.outputs.cache-primary-key }}
