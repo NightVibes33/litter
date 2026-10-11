@@ -521,8 +521,7 @@ impl AppStoreReducer {
             snapshot.threads.retain(|key, thread| {
                 let keep = key.server_id != server_id
                     || incoming_ids.contains(&key.thread_id)
-                    || (active_thread_key.as_ref() == Some(key)
-                        && Self::keep_thread_absent_from_incoming_page(thread))
+                    || active_thread_key.as_ref() == Some(key)
                     || thread.agent_runtime_kind == "local-studio"
                     || Self::keep_thread_absent_from_incoming_page(thread);
                 if !keep {
@@ -722,8 +721,7 @@ impl AppStoreReducer {
             snapshot.threads.retain(|key, thread| {
                 let keep = key.server_id != server_id
                     || incoming_ids.contains(&key.thread_id)
-                    || (active_thread_key.as_ref() == Some(key)
-                        && Self::keep_thread_absent_from_incoming_page(thread))
+                    || active_thread_key.as_ref() == Some(key)
                     || thread.agent_runtime_kind == "local-studio"
                     || Self::keep_thread_absent_from_incoming_page(thread);
                 if !keep {
