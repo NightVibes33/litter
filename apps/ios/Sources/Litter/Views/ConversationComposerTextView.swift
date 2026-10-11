@@ -285,7 +285,7 @@ struct ConversationComposerTextView: UIViewRepresentable {
         func scheduleMentionHighlight(for textView: UITextView) {
             mentionHighlightWorkItem?.cancel()
             let work = DispatchWorkItem { [weak self, weak textView] in
-                guard let self, let textView, !work.isCancelled else { return }
+                guard let self, let textView else { return }
                 self.applyMentionHighlight(to: textView)
             }
             mentionHighlightWorkItem = work
