@@ -4593,21 +4593,21 @@ mod tests {
         let mut receiver = reducer.subscribe();
         reducer.finalize_thread_list_sync("srv", &HashSet::from([kept.id.clone()]));
 
-        // Only the listed server's cached rows are dropped; the stale one is
-        // removed on the platform, the other server's row stays.
+        // An authoritative listing updates live rows but never deletes local
+        // history that is absent from that response.
         assert_eq!(
             ids(&reducer.snapshot()),
-            HashSet::from(["srv/kept".into(), "other/waiting".into()])
+            HashSet::from([
+                "srv/kept".into(),
+                "srv/gone".into(),
+                "other/waiting".into(),
+            ])
         );
         let updates = drain_updates(&mut receiver);
-        assert!(updates.iter().any(|update| matches!(
-            update,
-            AppStoreUpdateRecord::ThreadRemoved { key, .. }
-                if key.server_id == "srv" && key.thread_id == "gone"
-        )));
         assert!(!updates.iter().any(|update| matches!(
             update,
-            AppStoreUpdateRecord::ThreadRemoved { key, .. } if key.thread_id == "kept"
+            AppStoreUpdateRecord::ThreadRemoved { key, .. }
+                if key.server_id == "srv"
         )));
     }
 
@@ -4635,7 +4635,7 @@ mod tests {
             server_id: "srv".to_string(),
             thread_id: "page-two".to_string(),
         }));
-        assert!(!snapshot.threads.contains_key(&ThreadKey {
+        assert!(snapshot.threads.contains_key(&ThreadKey {
             server_id: "srv".to_string(),
             thread_id: "stale".to_string(),
         }));
@@ -4651,7 +4651,7 @@ mod tests {
             AppStoreUpdateRecord::ThreadUpserted { thread, .. }
                 if thread.key.thread_id == "page-two"
         )));
-        assert!(updates.iter().any(|update| matches!(
+        assert!(!updates.iter().any(|update| matches!(
             update,
             AppStoreUpdateRecord::ThreadRemoved { key, .. }
                 if key.thread_id == "stale"
