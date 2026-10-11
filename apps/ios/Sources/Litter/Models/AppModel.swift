@@ -371,6 +371,10 @@ final class AppModel {
         return value.contains("thread not found")
             || value.contains("thread cannot be found")
             || value.contains("no thread found")
+            || value.contains("no rollout found for thread id")
+            || value.contains("conversation no longer exists")
+            || value.contains("conversation not found")
+            || value.contains("conversation does not exist")
             || value.contains("unknown thread")
             || value.contains("was not found in any registered runtime")
     }
