@@ -635,6 +635,7 @@ struct ConversationMessageList: View {
     @State private var requestedOlderTurnsCursor: String?
     @State private var requestedOlderTurnsThreadKey: ThreadKey?
     @State private var showOlderPageLoader = false
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("collapseTurns") private var collapseTurns = false
     @AppStorage(ConversationDisplayPreferenceKey.reasoning) private var reasoningMode = ConversationDetailDisplayMode.collapsed.rawValue
     @AppStorage(ConversationDisplayPreferenceKey.commands) private var commandMode = ConversationDetailDisplayMode.collapsed.rawValue
@@ -678,6 +679,21 @@ struct ConversationMessageList: View {
 
     var body: some View {
         let _ = PerfTracker.event("ConversationMessageList.body")
+        // Do not keep the transcript's GeometryReader/LazyVStack alive while
+        // iOS is tearing down the foreground scene. This avoids layout work
+        // during process-exit and prevents the 0x8BADF00D watchdog path.
+        Group {
+            if scenePhase == .active {
+                activeTranscriptBody
+            } else {
+                Color.clear
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var activeTranscriptBody: some View {
         GeometryReader { viewport in
             let columnWidth = LitterSpace.readableColumnWidth(for: viewport.size.width)
             ZStack(alignment: .bottomTrailing) {
