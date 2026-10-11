@@ -1,0 +1,457 @@
+name: Mobile CI
+
+on:
+  pull_request:
+    paths:
+      - 'Makefile'
+      - '.gitmodules'
+      - 'apps/android/**'
+      - 'apps/ios/**'
+      - 'patches/codex/**'
+      - 'patches/ghostty/**'
+      - 'shared/rust-bridge/**'
+      - 'shared/third_party/codex/**'
+      - 'shared/third_party/ghostty'
+      - 'tools/scripts/**'
+      - '.github/workflows/mobile-ci.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'Makefile'
+      - '.gitmodules'
+      - 'apps/android/**'
+      - 'apps/ios/**'
+      - 'patches/codex/**'
+      - 'patches/ghostty/**'
+      - 'shared/rust-bridge/**'
+      - 'shared/third_party/codex/**'
+      - 'shared/third_party/ghostty'
+      - 'tools/scripts/**'
+      - '.github/workflows/mobile-ci.yml'
+
+concurrency:
+  group: mobile-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shared-prep:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      SCCACHE_BUCKET: rust-cache
+      SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_R2_ENDPOINT }}
+      SCCACHE_REGION: auto
+      SCCACHE_S3_USE_SSL: "true"
+      SCCACHE_S3_KEY_PREFIX: ci/mobile-prep
+      AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_R2_SECRET_ACCESS_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.3'
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Setup Zig (libghostty build)
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure sccache
+        run: |
+          if [ -n "${SCCACHE_ENDPOINT:-}" ] && [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          else
+            echo "SCCACHE_BUCKET=" >> "$GITHUB_ENV"
+            echo "SCCACHE_ENDPOINT=" >> "$GITHUB_ENV"
+            echo "SCCACHE_S3_KEY_PREFIX=" >> "$GITHUB_ENV"
+            echo "AWS_ACCESS_KEY_ID=" >> "$GITHUB_ENV"
+            echo "AWS_SECRET_ACCESS_KEY=" >> "$GITHUB_ENV"
+          fi
+
+      - name: Setup sccache
+        if: env.SCCACHE_ENDPOINT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != ''
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Sync codex submodule
+        run: ./apps/ios/scripts/sync-codex.sh --preserve-current
+
+      - name: Restore generated mobile bindings cache
+        id: mobile-bindings-cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            shared/rust-bridge/generated
+          key: mobile-bindings-both-${{ runner.os }}-${{ hashFiles('apps/ios/scripts/sync-codex.sh', 'shared/rust-bridge/generate-bindings.sh', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/codex-mobile-client/src/**', 'shared/rust-bridge/uniffi-bindgen/**', 'patches/codex/**', 'shared/third_party/codex/codex-rs/app-server-protocol/src/protocol/**', 'shared/third_party/codex/codex-rs/protocol/src/**') }}
+
+      - name: Generate shared mobile bindings
+        if: steps.mobile-bindings-cache.outputs.cache-hit != 'true'
+        env:
+          CARGO_INCREMENTAL: "0"
+        run: |
+          cd shared/rust-bridge
+          ./generate-bindings.sh
+
+      - name: Generate Material3 scheme roles
+        run: |
+          bash tools/scripts/generate-material-schemes.sh
+          node --import ./tools/scripts/register-esm.mjs --test tools/scripts/generate-material-schemes.test.mjs
+
+      # The shared Rust crate is the only implementation of session, thread,
+      # streaming, hydration, discovery and reconnect logic; both platforms are
+      # thin projections over it. Compiling it is not evidence that it works.
+      - name: Shared Rust tests
+        env:
+          CARGO_INCREMENTAL: "0"
+          # Cargo's libgit2/SecureTransport fetch repeatedly failed on libyuv.
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+        run: |
+          cargo test --manifest-path shared/rust-bridge/Cargo.toml -p codex-mobile-client -p codex-slingshot
+          # The codex submodule is checked out pristine on cache hits, so apply
+          # the patch set before testing patched submodule crates.
+          ./apps/ios/scripts/sync-codex.sh --recorded-gitlink
+          cargo test --manifest-path shared/third_party/codex/codex-rs/Cargo.toml -p codex-thread-store
+
+      - name: Release script tests
+        run: |
+          bash apps/ios/scripts/tests/testflight-finalize.test.sh
+          bash apps/ios/scripts/tests/app-store-release.test.sh
+          python3 tools/scripts/tests/test_fetch_mobile_store_artifacts.py
+
+      - name: Package shared mobile sources
+        run: |
+          mkdir -p apps/ios/GeneratedRust/Headers .ci-prep/shared
+
+          cp shared/rust-bridge/generated/swift/codex_mobile_client.swift \
+            apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
+          cp shared/rust-bridge/generated/swift/codex_mobile_clientFFI.h \
+            apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h
+          cp shared/rust-bridge/generated/swift/codex_mobile_clientFFI.modulemap \
+            apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.modulemap
+          cp shared/rust-bridge/generated/swift/module.modulemap \
+            apps/ios/GeneratedRust/Headers/module.modulemap
+
+          tar -czf .ci-prep/shared/generated-mobile-sources.tgz -C . \
+            shared/rust-bridge/generated \
+            apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift \
+            apps/ios/GeneratedRust/Headers \
+            apps/android/app/src/main/java/com/litter/android/ui/LitterMaterialSchemes.generated.kt
+
+      - name: Upload shared prep artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: shared-prep
+          path: .ci-prep/shared
+          if-no-files-found: error
+
+  android:
+    needs: shared-prep
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SCCACHE_BUCKET: rust-cache
+      SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_R2_ENDPOINT }}
+      SCCACHE_REGION: auto
+      SCCACHE_S3_USE_SSL: "true"
+      SCCACHE_S3_KEY_PREFIX: ci/mobile-android
+      AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_R2_SECRET_ACCESS_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '12266719'
+
+      - name: Install Android platforms and NDK
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;30.0.14904198"
+
+      - name: Install system deps
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev libcap-dev clang lld cmake
+
+      - name: Setup Zig (libghostty build)
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - name: Configure sccache
+        run: |
+          if [ -n "${SCCACHE_ENDPOINT:-}" ] && [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          else
+            echo "SCCACHE_BUCKET=" >> "$GITHUB_ENV"
+            echo "SCCACHE_ENDPOINT=" >> "$GITHUB_ENV"
+            echo "SCCACHE_S3_KEY_PREFIX=" >> "$GITHUB_ENV"
+            echo "AWS_ACCESS_KEY_ID=" >> "$GITHUB_ENV"
+            echo "AWS_SECRET_ACCESS_KEY=" >> "$GITHUB_ENV"
+          fi
+
+      - name: Setup sccache
+        if: env.SCCACHE_ENDPOINT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != ''
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Download shared prep artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: shared-prep
+          path: .ci-prep/shared
+
+      - name: Restore shared prep
+        run: |
+          ./apps/ios/scripts/sync-codex.sh --preserve-current
+
+          SHARED_PREP_ROOT=.ci-prep/shared
+          if [ -d "$SHARED_PREP_ROOT/shared" ]; then
+            SHARED_PREP_ROOT="$SHARED_PREP_ROOT/shared"
+          fi
+
+          tar -xzf "$SHARED_PREP_ROOT/generated-mobile-sources.tgz" -C .
+          mkdir -p .build-stamps
+          touch .build-stamps/sync .build-stamps/bindings-kotlin
+
+      - name: Install cargo-ndk
+        run: env -u RUSTC_WRAPPER cargo install cargo-ndk --locked
+
+      - name: Build Rust JNI libs
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/30.0.14904198
+        run: make rust-android
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Assemble debug
+        run: apps/android/gradlew -p apps/android :app:assembleDebug
+
+      # There is no Android toolchain on the primary development machine, so
+      # this job is the only place Android behavior is ever exercised. Keep it
+      # running tests, not just compiling.
+      - name: Unit tests
+        run: apps/android/gradlew -p apps/android :app:testDebugUnitTest
+
+      - name: Upload Android test report
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: android-test-report
+          path: apps/android/app/build/reports/tests/testDebugUnitTest
+          retention-days: 7
+
+  ios:
+    needs: shared-prep
+    runs-on: macos-26
+    timeout-minutes: 120
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      SCCACHE_BUCKET: rust-cache
+      SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_R2_ENDPOINT }}
+      SCCACHE_REGION: auto
+      SCCACHE_S3_USE_SSL: "true"
+      SCCACHE_S3_KEY_PREFIX: ci/mobile-ios
+      AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_R2_SECRET_ACCESS_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.3'
+
+      - name: Install build dependencies
+        run: brew install xcodegen meson ninja llvm lld
+
+      - name: Setup Zig (libghostty build)
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios-sim,i686-unknown-linux-musl
+
+      - name: Configure sccache
+        run: |
+          if [ -n "${SCCACHE_ENDPOINT:-}" ] && [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          else
+            echo "SCCACHE_BUCKET=" >> "$GITHUB_ENV"
+            echo "SCCACHE_ENDPOINT=" >> "$GITHUB_ENV"
+            echo "SCCACHE_S3_KEY_PREFIX=" >> "$GITHUB_ENV"
+            echo "AWS_ACCESS_KEY_ID=" >> "$GITHUB_ENV"
+            echo "AWS_SECRET_ACCESS_KEY=" >> "$GITHUB_ENV"
+          fi
+
+      - name: Setup sccache
+        if: env.SCCACHE_ENDPOINT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != ''
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Download shared prep artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: shared-prep
+          path: .ci-prep/shared
+
+      - name: Restore shared prep
+        run: |
+          ./apps/ios/scripts/sync-codex.sh --preserve-current
+
+          SHARED_PREP_ROOT=.ci-prep/shared
+          if [ -d "$SHARED_PREP_ROOT/shared" ]; then
+            SHARED_PREP_ROOT="$SHARED_PREP_ROOT/shared"
+          fi
+
+          tar -xzf "$SHARED_PREP_ROOT/generated-mobile-sources.tgz" -C .
+          mkdir -p .build-stamps
+          touch .build-stamps/sync .build-stamps/bindings-swift
+
+      - name: Build Rust for iOS simulator
+        run: env -u CARGO_INCREMENTAL ./apps/ios/scripts/build-rust.sh --preserve-current --fast-sim --skip-bindings
+
+      - name: Download Alpine rootfs
+        run: make alpine-fs
+
+      - name: Generate Xcode project
+        run: ./apps/ios/scripts/regenerate-project.sh
+
+      - name: Select simulator destination
+        run: |
+          SIMULATOR_UDID="$(
+            xcrun simctl list devices available | awk -F '[()]' '
+              /^-- iOS / { ios=1; next }
+              /^--/ { ios=0 }
+              ios && /iPhone 17 Pro/ { print $2; exit }
+              ios && /iPhone/ && first == "" { first=$2 }
+              END {
+                if (first != "") {
+                  print first
+                }
+              }
+            '
+          )"
+          if [ -z "$SIMULATOR_UDID" ]; then
+            echo "No available iPhone simulator found"
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "IOS_SIMULATOR_UDID=$SIMULATOR_UDID" >> "$GITHUB_ENV"
+
+      # `build-for-testing` compiles the app target and the test bundles in one
+      # pass, so this still proves the app builds while also producing something
+      # runnable. Splitting build from run keeps the failure attributable.
+      - name: Build (Litter + tests)
+        run: |
+          xcodebuild \
+            -project apps/ios/Litter.xcodeproj \
+            -scheme Litter \
+            -configuration Debug \
+            -destination "id=$IOS_SIMULATOR_UDID" \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
+            build-for-testing
+
+      - name: Test (LitterTests)
+        run: |
+          xcodebuild \
+            -project apps/ios/Litter.xcodeproj \
+            -scheme Litter \
+            -configuration Debug \
+            -destination "id=$IOS_SIMULATOR_UDID" \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
+            -only-testing:LitterTests \
+            test-without-building
+
+      - name: Test harness settings and conversation input
+        timeout-minutes: 10
+        run: |
+          xcodebuild \
+            -project apps/ios/Litter.xcodeproj \
+            -scheme Litter \
+            -configuration Debug \
+            -destination "id=$IOS_SIMULATOR_UDID" \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
+            -parallel-testing-enabled NO \
+            -resultBundlePath "$RUNNER_TEMP/harness-ui.xcresult" \
+            -only-testing:LitterUITests/LitterUITests/testHarnessSettingsNavigationEditingAndReadOnlyPolicy \
+            -only-testing:LitterUITests/LitterUITests/testConversationDisplaySettingsRowsAreReachable \
+            -only-testing:LitterUITests/LitterUITests/testConversationComposerAcceptsSimulatorKeyboardInput \
+            -only-testing:LitterUITests/LitterUITests/testConversationComposerPreservesRapidKeyboardInput \
+            test-without-building
+
+      - name: Upload harness UI test results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ios-harness-ui-results
+          path: ${{ runner.temp }}/harness-ui.xcresult
+          if-no-files-found: ignore
+
+      # Runtime smoke test: install the freshly built app, launch it, and
+      # assert the process survives. Unit tests never boot the embedded iSH
+      # guest runtime, so they cannot catch silently-broken embeds (e.g.
+      # litter-ish's ARM64 vdso degrading to an empty stub when no
+      # lld-capable clang is available, which SIGABRTs the app at launch).
+      - name: Smoke test (app launches and stays alive)
+        run: |
+          set -euo pipefail
+          xcrun simctl bootstatus "$IOS_SIMULATOR_UDID" -b
+          APP="$(find "$HOME/Library/Developer/Xcode/DerivedData" \
+            -path "*Debug-iphonesimulator/Litter.app" -type d -print -quit 2>/dev/null || true)"
+          if [ -z "$APP" ]; then
+            echo "Could not locate Litter.app in DerivedData" >&2
+            exit 1
+          fi
+          echo "Using app: $APP"
+          xcrun simctl install "$IOS_SIMULATOR_UDID" "$APP"
+          xcrun simctl launch "$IOS_SIMULATOR_UDID" com.sigkitten.litter
+          sleep 10
+          if ! xcrun simctl spawn "$IOS_SIMULATOR_UDID" launchctl list 2>/dev/null \
+              | grep -q "UIKitApplication:com.sigkitten.litter"; then
+            echo "App exited or crashed within 10s of launch" >&2
+            xcrun simctl spawn "$IOS_SIMULATOR_UDID" log show --last 2m \
+              --predicate 'process == "Litter"' --style compact 2>/dev/null | tail -80 || true
+            exit 1
+          fi
+          echo "App is alive"
