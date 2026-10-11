@@ -11,16 +11,22 @@ final class StreamingRendererCoordinator {
 
     private var renderers: [String: StreamingMarkdownRenderer] = [:]
     private var activeItemId: String?
+    private var pendingDeltas: [String: String] = [:]
+    private var flushTask: Task<Void, Never>?
 
     // MARK: - Delta feeding
 
     func appendDelta(_ delta: String, for itemId: String) {
         if activeItemId != itemId {
             if let oldId = activeItemId {
+                flushPendingDeltas(for: oldId)
                 renderers[oldId]?.finish()
             }
             activeItemId = itemId
         }
+        // Batch renderer work so streamed tokens do not compete with composer input.
+        pendingDeltas[itemId, default: ""] += delta
+        scheduleFlush()
         // Only append to an existing renderer. The first delta arrives via
         // `ThreadItemChanged` (placeholder insert) and never reaches this
         // path — the snapshot's text is updated instead. If we lazy-created
@@ -47,6 +53,7 @@ final class StreamingRendererCoordinator {
     }
 
     func finish(itemId: String) {
+        flushPendingDeltas(for: itemId)
         if let r = renderers.removeValue(forKey: itemId) {
             r.finish()
         }
@@ -55,6 +62,7 @@ final class StreamingRendererCoordinator {
     // MARK: - Streaming lifecycle
 
     func finishActive() {
+        flushAllPendingDeltas()
         for (_, r) in renderers {
             if !r.isFinished { r.finish() }
         }
@@ -62,12 +70,40 @@ final class StreamingRendererCoordinator {
     }
 
     func reset() {
+        flushTask?.cancel()
+        flushTask = nil
+        pendingDeltas.removeAll()
         for (_, r) in renderers { r.finish() }
         renderers.removeAll()
         activeItemId = nil
     }
 
     // MARK: - Private
+
+    private func scheduleFlush() {
+        guard flushTask == nil else { return }
+        flushTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 16_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.flushAllPendingDeltas()
+            self.flushTask = nil
+        }
+    }
+
+    private func flushPendingDeltas(for itemId: String) {
+        guard let delta = pendingDeltas.removeValue(forKey: itemId), !delta.isEmpty else { return }
+        renderers[itemId]?.append(delta)
+    }
+
+    private func flushAllPendingDeltas() {
+        flushTask?.cancel()
+        flushTask = nil
+        let deltas = pendingDeltas
+        pendingDeltas.removeAll()
+        for (itemId, delta) in deltas where !delta.isEmpty {
+            renderers[itemId]?.append(delta)
+        }
+    }
 
     private func makeRenderer(for itemId: String) -> StreamingMarkdownRenderer {
         let r = StreamingMarkdownRenderer(
