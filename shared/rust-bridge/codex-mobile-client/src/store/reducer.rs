@@ -517,18 +517,10 @@ impl AppStoreReducer {
         let agent_directory_version;
         {
             let mut snapshot = self.write_snapshot();
-            let active_thread_key = snapshot.active_thread.clone();
-            snapshot.threads.retain(|key, thread| {
-                let keep = key.server_id != server_id
-                    || incoming_ids.contains(&key.thread_id)
-                    || active_thread_key.as_ref() == Some(key)
-                    || thread.agent_runtime_kind == "local-studio"
-                    || Self::keep_thread_absent_from_incoming_page(thread);
-                if !keep {
-                    removed_thread_keys.push(key.clone());
-                }
-                keep
-            });
+            // A server listing is not a deletion authority. Threads can be
+            // temporarily omitted during pagination, reconnect, auth restore, or
+            // server-side retention changes. Keep every local transcript here;
+            // only explicit user deletion removes a thread.
             for info in threads {
                 let key = ThreadKey {
                     server_id: server_id.to_string(),
@@ -717,34 +709,12 @@ impl AppStoreReducer {
         let agent_directory_version;
         {
             let mut snapshot = self.write_snapshot();
-            let active_thread_key = snapshot.active_thread.clone();
-            snapshot.threads.retain(|key, thread| {
-                let keep = key.server_id != server_id
-                    || incoming_ids.contains(&key.thread_id)
-                    || active_thread_key.as_ref() == Some(key)
-                    || thread.agent_runtime_kind == "local-studio"
-                    || Self::keep_thread_absent_from_incoming_page(thread);
-                if !keep {
-                    removed_thread_keys.push(key.clone());
-                }
-                keep
-            });
-            // The authoritative listing supersedes this server's launch-cache
-            // rows. Rows now backed by a live thread are replaced through the
-            // normal upsert path; the rest must be removed on the platform.
-            {
-                let snap = &mut *snapshot;
-                let live_threads = &snap.threads;
-                snap.cached_session_summaries.retain(|cached| {
-                    if cached.key.server_id != server_id {
-                        return true;
-                    }
-                    if !live_threads.contains_key(&cached.key) {
-                        removed_thread_keys.push(cached.key.clone());
-                    }
-                    false
-                });
-            }
+            // A server listing is not a deletion authority. Threads can be
+            // temporarily omitted during pagination, reconnect, auth restore, or
+            // server-side retention changes. Keep every local transcript here;
+            // only explicit user deletion removes a thread.
+            // Cached summaries are local history too. Keep them until the user
+            // explicitly deletes the corresponding conversation.
             if snapshot.active_thread.as_ref().is_some_and(|key| {
                 key.server_id == server_id && !incoming_ids.contains(&key.thread_id)
             }) {
