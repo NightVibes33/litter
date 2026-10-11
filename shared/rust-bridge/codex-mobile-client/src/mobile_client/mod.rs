@@ -305,6 +305,19 @@ fn history_unavailable_reason(error: &str) -> Option<&'static str> {
             "This session's working directory no longer exists on the host, so the agent cannot reopen it. Restore the directory to see its history.",
         );
     }
+    if lower.contains("thread not found")
+        || lower.contains("thread cannot be found")
+        || lower.contains("no thread found")
+        || lower.contains("unknown thread")
+        || lower.contains("no rollout found for thread id")
+        || lower.contains("conversation no longer exists")
+        || lower.contains("conversation not found")
+        || lower.contains("conversation does not exist")
+    {
+        return Some(
+            "This conversation is preserved on this device, but the connected server no longer has the live thread. Reconnect the server or start a new thread to continue.",
+        );
+    }
     None
 }
 
@@ -3803,6 +3816,9 @@ impl MobileClient {
             Err(error) => {
                 self.app_store
                     .finish_server_mutating_command_failure(server_id, &direct_command_id);
+                if history_unavailable_reason(&error).is_some() {
+                    self.note_thread_history_unavailable(&thread_key, &error);
+                }
                 if let Some(overlay_id) = optimistic_overlay_id.as_ref() {
                     self.app_store
                         .remove_local_overlay_item(&thread_key, overlay_id);
