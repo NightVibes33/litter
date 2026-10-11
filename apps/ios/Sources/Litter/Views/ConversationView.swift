@@ -247,7 +247,7 @@ struct ConversationView: View {
                     error.localizedDescription
                 )
                 messageActionError = AppModel.isMissingThreadError(error)
-                    ? "This conversation no longer exists on the connected server. Your message was not sent. Return to Chats to start a new conversation or delete the stale thread."
+                    ? "This conversation is preserved on this device, but the connected server no longer has the live thread. Reconnect the server or start a new conversation to continue."
                     : error.localizedDescription
             }
         }
