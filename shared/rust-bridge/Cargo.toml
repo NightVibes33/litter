@@ -99,6 +99,7 @@ debug = 0
 codegen-units = 16
 
 [patch.crates-io]
+num_threads = { path = "vendor/num_threads-0.1.7" }
 openssl-src = { path = "vendor/openssl-src-300.5.9" }
 russh = { path = "vendor/russh-0.63.2" }
 ssh-key = { path = "vendor/ssh-key-0.7.0-rc.11" }
