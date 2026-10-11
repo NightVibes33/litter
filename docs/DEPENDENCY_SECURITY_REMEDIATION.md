@@ -159,3 +159,20 @@ current connection. Manually dispatching that minimal-site workflow succeeded
 and deployed the support site; the legacy source setting still needs to change
 to prevent future repository-root uploads. Administrative failures are not
 suppressed.
+
+## Rustix and legacy Pages follow-up
+
+Both the next unsigned build and TestFlight asset preparation exposed the same
+rustix 1.1.4/libc 0.2.190 Apple constant mismatch. The mobile lockfile upgrades
+to upstream rustix 1.1.5, which correctly gates the macOS-only APIs. A standalone
+Apple ABI checker compiles every rustix 1.x API plus the actual iOS legacy
+rustix, Nix, and num_threads feature paths; its pins must match the iOS metadata
+graph. Local iOS compilation passed. Full archive validation remains required.
+
+The legacy Pages job ignored source exclusions because the root .nojekyll flag
+forced an entire-repository static upload. Removing that root flag lets the
+existing Jekyll exclusions apply; docs is also excluded so the published root
+content consists of the static support pages rather than source/vendor trees.
+The minimal workflow retains its own generated .nojekyll artifact. The next
+legacy build must verify this repair independently of the prior successful
+minimal workflow deployment. No repository settings permissions are bypassed.

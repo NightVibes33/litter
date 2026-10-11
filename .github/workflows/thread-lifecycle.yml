@@ -9,6 +9,7 @@ on:
       - 'shared/third_party/codex/**'
       - 'patches/codex/**'
       - 'tools/scripts/audit-rust-dependencies.py'
+      - 'tools/rust-ios-compat-check/**'
   pull_request:
     paths:
       - '.github/workflows/thread-lifecycle.yml'
@@ -16,6 +17,7 @@ on:
       - 'shared/third_party/codex/**'
       - 'patches/codex/**'
       - 'tools/scripts/audit-rust-dependencies.py'
+      - 'tools/rust-ios-compat-check/**'
   workflow_dispatch:
 
 permissions:
@@ -45,9 +47,24 @@ jobs:
       - name: Audit Rust packages and bundled OpenSSL baseline
         run: python3 tools/scripts/audit-rust-dependencies.py --output "$RUNNER_TEMP/rust-security.json"
 
-      - name: Check Apple thread-count ABI against the locked libc
-        working-directory: shared/rust-bridge
-        run: cargo check --locked -p num_threads --target aarch64-apple-ios
+      - name: Check Apple ABI dependencies before SDK builds
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, subprocess, tomllib
+          root = json.loads(subprocess.check_output([
+              'cargo', 'metadata', '--locked', '--format-version', '1',
+              '--manifest-path', 'shared/rust-bridge/Cargo.toml',
+              '--filter-platform', 'aarch64-apple-ios',
+          ], text=True))
+          active = {p['id'] for p in root['resolve']['nodes']}
+          check = tomllib.loads(Path('tools/rust-ios-compat-check/Cargo.lock').read_text())
+          names = {'libc', 'num_threads', 'rustix', 'nix'}
+          root_pins = {(p['name'], p['version']) for p in root['packages'] if p['name'] in names and p['id'] in active}
+          check_pins = {(p['name'], p['version']) for p in check['package'] if p['name'] in names}
+          assert root_pins == check_pins, 'Update the Apple ABI checker to match the mobile lockfile'
+          PY
+          cargo check --locked --manifest-path tools/rust-ios-compat-check/Cargo.toml --target aarch64-apple-ios
 
       - name: Check mobile client
         working-directory: shared/rust-bridge

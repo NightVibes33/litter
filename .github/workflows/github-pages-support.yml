@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - 'index.html'
+      - 'alley-cat-support/**'
+      - '_config.yml'
       - 'docs/alley-cat-support/**'
       - '.github/workflows/github-pages-support.yml'
   workflow_dispatch:

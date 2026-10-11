@@ -1,0 +1,15 @@
+[package]
+name = "ios-rust-compat-check"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+libc = "=0.2.190"
+num_threads = { path = "../../shared/rust-bridge/vendor/num_threads-0.1.7" }
+rustix = { version = "=1.1.5", features = ["all-apis"] }
+rustix_legacy = { package = "rustix", version = "=0.38.44", features = ["fs"] }
+nix_legacy = { package = "nix", version = "=0.28.0", features = ["fs", "ioctl", "poll", "process", "signal", "term"] }
+nix = { version = "=0.31.2", features = ["fs", "mman", "poll", "process", "signal"] }
