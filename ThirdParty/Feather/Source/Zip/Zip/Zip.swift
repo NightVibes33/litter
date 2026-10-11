@@ -72,10 +72,18 @@ public class Zip {
             throw ZipError.unzipFail
         }
         let root = destination.standardizedFileURL.resolvingSymlinksInPath()
-        let target = root.appendingPathComponent(normalized).standardizedFileURL.resolvingSymlinksInPath()
-        guard target.path.hasPrefix(root.path + "/") else {
-            throw ZipError.unzipFail
+        // Resolve each existing parent before appending a missing leaf. On macOS,
+        // resolving the full URL can leave a parent symlink unresolved if the leaf
+        // does not exist yet.
+        var target = root
+        for component in normalized.split(separator: "/") {
+            target = target.appendingPathComponent(String(component))
+                .standardizedFileURL.resolvingSymlinksInPath()
+            guard target.path.hasPrefix(root.path + "/") else {
+                throw ZipError.unzipFail
+            }
         }
+        guard target.path != root.path else { throw ZipError.unzipFail }
         return target
     }
 

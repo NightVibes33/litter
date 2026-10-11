@@ -79,7 +79,7 @@ necessary before release. Recheck the actual GitHub Dependabot count after merge
 All six tracked Swift package resolutions and both npm lockfiles were checked.
 Feather upgrades Vapor to 4.122.2, Swift Crypto to 4.5.2, SwiftNIO to 2.101.0,
 NIO HTTP/2 to 1.45.0, and NIO SSL to 2.37.2. A commit-based OSV scan reports
-no matches in the resulting 62 unique resolved commits. Feather uses a local
+no matches in the resulting 57 unique resolved commits. Feather uses a local
 Zip 2.1.2 source patch because upstream has no fixed release for CVE-2023-39135.
 Extraction destinations are validated before directory creation or file writes,
 including existing symlink resolution. This source replacement requires review;
@@ -129,4 +129,15 @@ verifies its published SHA-256, and performs no build-time network download.
 A compatibility test checks the actual linked OpenSSL release. The inventory
 now additionally rejects bundles below the reviewed native release baselines
 (3.5.9, 3.6.5, or 4.0.3). These checks are distinct from OSV crate advisories.
-See vendor/openssl-src-300.5.9/LITTER_PATCHES.md for provenance and licenses.
+See shared/rust-bridge/vendor/openssl-src-300.5.9/LITTER_PATCHES.md for provenance and licenses.
+
+Feather's lockfiles are synchronized from a successful Xcode resolution. The
+Swift graph compiles and initializes successfully on macOS. Its Zip boundary
+test exposed macOS's treatment of nonexistent leaf paths: validation now
+resolves and checks each parent component before the leaf is appended.
+
+The unsigned archive's missing Nyxian recovery types are exposed through the
+embedded umbrella header. CoreCompiler enum Codable conformances use a
+root-owned integration file importing their owning framework, rather than
+compiling the upstream file without that module import. The upstream source
+gitlink is unchanged. Full unsigned archive validation remains required.

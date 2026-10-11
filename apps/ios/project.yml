@@ -411,7 +411,6 @@ targets:
         headerVisibility: public
         excludes:
           - emexDE.modulemap
-      - path: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CCBaseSwift.swift
       - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationObject.m
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationWorkspace.m
