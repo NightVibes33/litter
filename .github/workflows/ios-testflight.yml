@@ -1,3 +1,4 @@
+# CI runner policy validated: macos-26-intel app runner
 name: iOS TestFlight Release
 
 on:
