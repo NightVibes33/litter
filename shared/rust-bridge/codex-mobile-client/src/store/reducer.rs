@@ -555,7 +555,7 @@ impl AppStoreReducer {
                 approval.thread_id.as_deref().is_none_or(|tid| {
                     !removed_thread_keys
                         .iter()
-                        .any(|key| key.thread_id.as_str() == tid)
+                        .any(|key: &ThreadKey| key.thread_id.as_str() == tid)
                 })
             });
             let remaining_approval_keys = snapshot
@@ -710,7 +710,7 @@ impl AppStoreReducer {
                 approval.thread_id.as_deref().is_none_or(|tid| {
                     !removed_thread_keys
                         .iter()
-                        .any(|key| key.thread_id.as_str() == tid)
+                        .any(|key: &ThreadKey| key.thread_id.as_str() == tid)
                 })
             });
             let remaining_approval_keys = snapshot
