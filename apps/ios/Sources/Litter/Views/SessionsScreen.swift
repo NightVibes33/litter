@@ -778,7 +778,7 @@ struct SessionsScreen: View {
             onOpenConversation(nextKey)
         } catch {
             if AppModel.isMissingThreadError(error) {
-                sessionActionErrorMessage = "This conversation no longer exists on its server. You can delete its stale entry from the sessions list. Other conversations were not changed."
+                sessionActionErrorMessage = "This conversation is preserved on this device, but the connected server no longer has the live thread. Reconnect the server or start a new conversation to continue."
             } else {
                 sessionActionErrorMessage = error.localizedDescription
             }
