@@ -37,12 +37,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.95.0
+          targets: aarch64-apple-ios
 
       - name: Apply repository Codex compatibility patches
         run: ./apps/ios/scripts/sync-codex.sh --preserve-current
 
       - name: Audit Rust packages and bundled OpenSSL baseline
         run: python3 tools/scripts/audit-rust-dependencies.py --output "$RUNNER_TEMP/rust-security.json"
+
+      - name: Check Apple thread-count ABI against the locked libc
+        working-directory: shared/rust-bridge
+        run: cargo check --locked -p num_threads --target aarch64-apple-ios
 
       - name: Check mobile client
         working-directory: shared/rust-bridge

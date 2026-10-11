@@ -141,3 +141,21 @@ embedded umbrella header. CoreCompiler enum Codable conformances use a
 root-owned integration file importing their owning framework, rather than
 compiling the upstream file without that module import. The upstream source
 gitlink is unchanged. Full unsigned archive validation remains required.
+
+## Post-merge iOS compile repair
+
+The full unsigned build exposed a target-specific compatibility failure in
+num_threads 0.1.7 with libc 0.2.190: libc now limits its deprecated Mach task
+helper to macOS. A licensed, root-owned num_threads snapshot binds the same
+libSystem task-port variable directly. Thread enumeration and cleanup remain
+unchanged; libc is not downgraded. The iOS-target crate check passed locally and
+now runs in Rust CI. Full unsigned archive validation remains required.
+
+The separate main release failure is npm E404 publishing kittylitter 0.3.13;
+its trusted publisher must authorize this fork and release workflow. Pages
+continues to use the legacy repository-root upload. The minimal static-site
+workflow exists, but changing Pages to workflow mode returns HTTP 403 to the
+current connection. Manually dispatching that minimal-site workflow succeeded
+and deployed the support site; the legacy source setting still needs to change
+to prevent future repository-root uploads. Administrative failures are not
+suppressed.
