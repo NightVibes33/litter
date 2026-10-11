@@ -476,24 +476,6 @@ impl AppStoreReducer {
         self.emit(AppStoreUpdateRecord::ActiveThreadChanged { key: None });
     }
 
-    /// Whether a thread that is absent from an incoming `thread/list` page
-    /// should survive the reconcile anyway. Besides the active thread and
-    /// local-studio, never evict a thread we are actively using: one with an
-    /// in-flight turn, queued follow-ups, a staged local overlay, or one
-    /// created within the last minute. The brand-new-thread window matters
-    /// because a just-started OpenCode session may not appear in
-    /// `GET /session` until its first message lands; evicting it then causes
-    /// the first `turn/start` overlay and its streamed events to be dropped
-    /// (0xSero/litter#283).
-    fn keep_thread_absent_from_incoming_page(thread: &ThreadSnapshot) -> bool {
-        thread.active_turn_id.is_some()
-            || !thread.queued_follow_ups.is_empty()
-            || !thread.local_overlay_items.is_empty()
-            || thread.info.created_at.is_some_and(|created_at| {
-                created_at > 0 && (now_ms() as i64 / 1000).saturating_sub(created_at) < 60
-            })
-    }
-
     pub fn sync_thread_list(&self, server_id: &str, threads: &[ThreadInfo]) {
         self.sync_thread_list_for_runtime(server_id, "codex".to_string(), threads);
     }
