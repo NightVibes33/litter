@@ -59,7 +59,7 @@ jobs:
           ], text=True))
           active = {p['id'] for p in root['resolve']['nodes']}
           check = tomllib.loads(Path('tools/rust-ios-compat-check/Cargo.lock').read_text())
-          names = {'libc', 'num_threads', 'rustix', 'nix', 'netdev'}
+          names = {'libc', 'num_threads', 'rustix', 'nix', 'netdev', 'netwatch'}
           root_pins = {(p['name'], p['version']) for p in root['packages'] if p['name'] in names and p['id'] in active}
           check_pins = {(p['name'], p['version']) for p in check['package'] if p['name'] in names}
           assert root_pins == check_pins, 'Update the Apple ABI checker to match the mobile lockfile'

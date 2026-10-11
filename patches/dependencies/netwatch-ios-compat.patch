@@ -1,0 +1,185 @@
+--- a/src/interfaces/bsd.rs
++++ b/src/interfaces/bsd.rs
+@@ -10,9 +10,18 @@
+ 
+ use libc::{AF_INET, AF_INET6, AF_LINK, AF_ROUTE, AF_UNSPEC, CTL_NET, c_int, uintptr_t};
+ #[cfg(any(target_os = "macos", target_os = "ios"))]
+-use libc::{
+-    NET_RT_DUMP, RTA_IFP, RTAX_BRD, RTAX_DST, RTAX_GATEWAY, RTAX_MAX, RTAX_NETMASK, RTF_GATEWAY,
++use routing::{
++    RTA_IFP, RTAX_BRD, RTAX_DST, RTAX_GATEWAY, RTAX_MAX, RTAX_NETMASK, RTF_GATEWAY,
+ };
++use libc::NET_RT_DUMP;
++
++#[cfg(any(target_os = "macos", target_os = "ios"))]
++pub(crate) mod darwin_abi;
++#[cfg(target_os = "ios")]
++pub(crate) use self::darwin_abi as routing;
++#[cfg(not(target_os = "ios"))]
++pub(crate) use libc as routing;
++
+ use n0_error::{e, ensure, stack_error};
+ use tracing::warn;
+ 
+@@ -104,7 +113,7 @@
+     }
+ 
+     #[cfg(any(target_os = "macos", target_os = "ios"))]
+-    if rm.flags & libc::RTF_IFSCOPE as u32 != 0 {
++    if rm.flags & routing::RTF_IFSCOPE as u32 != 0 {
+         return false;
+     }
+ 
+@@ -1064,7 +1073,7 @@
+     #[cfg(target_endian = "little")]
+     fn test_parse_addrs() {
+         #[cfg(any(target_os = "macos", target_os = "ios"))]
+-        use libc::{RTA_BRD, RTA_DST, RTA_GATEWAY, RTA_IFA, RTA_IFP, RTA_NETMASK};
++        use super::routing::{RTA_BRD, RTA_DST, RTA_GATEWAY, RTA_IFA, RTA_IFP, RTA_NETMASK};
+ 
+         let parse_addrs_little_endian_tests = [
+             ParseAddrsTest {
+--- a/src/interfaces/bsd/macos.rs
++++ b/src/interfaces/bsd/macos.rs
+@@ -1,3 +1,4 @@
++use super::routing;
+ use super::{MessageType, RoutingStack, WireFormat};
+ 
+ // Hardcoded based on the generated values here: https://cs.opensource.google/go/x/net/+/master:route/zsys_darwin.go
+@@ -18,7 +19,7 @@
+ pub(super) const SIZEOF_SOCKADDR_INET6: usize = 0x1c;
+ 
+ pub(super) fn probe_routing_stack() -> RoutingStack {
+-    let rtm_version = libc::RTM_VERSION;
++    let rtm_version = routing::RTM_VERSION;
+ 
+     let rtm = WireFormat {
+         ext_off: 36,
+@@ -57,23 +58,23 @@
+     };
+ 
+     let wire_formats = [
+-        (libc::RTM_ADD, rtm),
+-        (libc::RTM_DELETE, rtm),
+-        (libc::RTM_CHANGE, rtm),
+-        (libc::RTM_GET, rtm),
+-        (libc::RTM_LOSING, rtm),
+-        (libc::RTM_REDIRECT, rtm),
+-        (libc::RTM_MISS, rtm),
+-        (libc::RTM_LOCK, rtm),
+-        (libc::RTM_RESOLVE, rtm),
+-        (libc::RTM_NEWADDR, ifam),
+-        (libc::RTM_DELADDR, ifam),
+-        (libc::RTM_IFINFO, ifm),
+-        (libc::RTM_NEWMADDR, ifmam),
+-        (libc::RTM_DELMADDR, ifmam),
+-        (libc::RTM_IFINFO2, ifm2),
+-        (libc::RTM_NEWMADDR2, ifmam2),
+-        (libc::RTM_GET2, rtm2),
++        (routing::RTM_ADD, rtm),
++        (routing::RTM_DELETE, rtm),
++        (routing::RTM_CHANGE, rtm),
++        (routing::RTM_GET, rtm),
++        (routing::RTM_LOSING, rtm),
++        (routing::RTM_REDIRECT, rtm),
++        (routing::RTM_MISS, rtm),
++        (routing::RTM_LOCK, rtm),
++        (routing::RTM_RESOLVE, rtm),
++        (routing::RTM_NEWADDR, ifam),
++        (routing::RTM_DELADDR, ifam),
++        (routing::RTM_IFINFO, ifm),
++        (routing::RTM_NEWMADDR, ifmam),
++        (routing::RTM_DELMADDR, ifmam),
++        (routing::RTM_IFINFO2, ifm2),
++        (routing::RTM_NEWMADDR2, ifmam2),
++        (routing::RTM_GET2, rtm2),
+     ]
+     .into_iter()
+     .collect();
+--- a/src/netmon/bsd.rs
++++ b/src/netmon/bsd.rs
+@@ -1,7 +1,7 @@
+ use std::ops::ControlFlow;
+ 
+ #[cfg(any(target_os = "macos", target_os = "ios"))]
+-use libc::{RTAX_DST, RTAX_IFP};
++use crate::interfaces::bsd::routing::{RTAX_DST, RTAX_IFP};
+ use n0_error::stack_error;
+ use n0_future::{
+     task::AbortOnDropHandle,
+--- a/src/interfaces/bsd/darwin_abi.rs
++++ b/src/interfaces/bsd/darwin_abi.rs
+@@ -0,0 +1,73 @@
++//! Darwin routing constants from Apple XNU bsd/net/route.h.
++//! libc 0.2.190 exports these only on macOS; iOS shares the wire ABI.
++
++use libc::c_int;
++
++pub const RTAX_BRD: c_int = 7;
++pub const RTAX_DST: c_int = 0;
++pub const RTAX_GATEWAY: c_int = 1;
++pub const RTAX_IFP: c_int = 4;
++pub const RTAX_MAX: c_int = 8;
++pub const RTAX_NETMASK: c_int = 2;
++pub const RTA_BRD: c_int = 0x80;
++pub const RTA_DST: c_int = 0x1;
++pub const RTA_GATEWAY: c_int = 0x2;
++pub const RTA_IFA: c_int = 0x20;
++pub const RTA_IFP: c_int = 0x10;
++pub const RTA_NETMASK: c_int = 0x4;
++pub const RTF_GATEWAY: c_int = 0x2;
++pub const RTF_IFSCOPE: c_int = 0x1000000;
++pub const RTM_ADD: c_int = 0x1;
++pub const RTM_CHANGE: c_int = 0x3;
++pub const RTM_DELADDR: c_int = 0xd;
++pub const RTM_DELETE: c_int = 0x2;
++pub const RTM_DELMADDR: c_int = 0x10;
++pub const RTM_GET: c_int = 0x4;
++pub const RTM_GET2: c_int = 0x14;
++pub const RTM_IFINFO: c_int = 0xe;
++pub const RTM_IFINFO2: c_int = 0x12;
++pub const RTM_LOCK: c_int = 0x8;
++pub const RTM_LOSING: c_int = 0x5;
++pub const RTM_MISS: c_int = 0x7;
++pub const RTM_NEWADDR: c_int = 0xc;
++pub const RTM_NEWMADDR: c_int = 0xf;
++pub const RTM_NEWMADDR2: c_int = 0x13;
++pub const RTM_REDIRECT: c_int = 0x6;
++pub const RTM_RESOLVE: c_int = 0xb;
++pub const RTM_VERSION: c_int = 5;
++
++#[cfg(target_os = "macos")]
++const _: () = {
++    assert!(RTAX_BRD == libc::RTAX_BRD);
++    assert!(RTAX_DST == libc::RTAX_DST);
++    assert!(RTAX_GATEWAY == libc::RTAX_GATEWAY);
++    assert!(RTAX_IFP == libc::RTAX_IFP);
++    assert!(RTAX_MAX == libc::RTAX_MAX);
++    assert!(RTAX_NETMASK == libc::RTAX_NETMASK);
++    assert!(RTA_BRD == libc::RTA_BRD);
++    assert!(RTA_DST == libc::RTA_DST);
++    assert!(RTA_GATEWAY == libc::RTA_GATEWAY);
++    assert!(RTA_IFA == libc::RTA_IFA);
++    assert!(RTA_IFP == libc::RTA_IFP);
++    assert!(RTA_NETMASK == libc::RTA_NETMASK);
++    assert!(RTF_GATEWAY == libc::RTF_GATEWAY);
++    assert!(RTF_IFSCOPE == libc::RTF_IFSCOPE);
++    assert!(RTM_ADD == libc::RTM_ADD);
++    assert!(RTM_CHANGE == libc::RTM_CHANGE);
++    assert!(RTM_DELADDR == libc::RTM_DELADDR);
++    assert!(RTM_DELETE == libc::RTM_DELETE);
++    assert!(RTM_DELMADDR == libc::RTM_DELMADDR);
++    assert!(RTM_GET == libc::RTM_GET);
++    assert!(RTM_GET2 == libc::RTM_GET2);
++    assert!(RTM_IFINFO == libc::RTM_IFINFO);
++    assert!(RTM_IFINFO2 == libc::RTM_IFINFO2);
++    assert!(RTM_LOCK == libc::RTM_LOCK);
++    assert!(RTM_LOSING == libc::RTM_LOSING);
++    assert!(RTM_MISS == libc::RTM_MISS);
++    assert!(RTM_NEWADDR == libc::RTM_NEWADDR);
++    assert!(RTM_NEWMADDR == libc::RTM_NEWMADDR);
++    assert!(RTM_NEWMADDR2 == libc::RTM_NEWMADDR2);
++    assert!(RTM_REDIRECT == libc::RTM_REDIRECT);
++    assert!(RTM_RESOLVE == libc::RTM_RESOLVE);
++    assert!(RTM_VERSION == libc::RTM_VERSION);
++};

@@ -9430,8 +9430,6 @@ dependencies = [
 [[package]]
 name = "netwatch"
 version = "0.19.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d9cbe01741347ef750d743d6690603f5eed8341e679fb51c8e629337aa11976"
 dependencies = [
  "atomic-waker",
  "bytes",

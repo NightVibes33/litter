@@ -185,3 +185,13 @@ netdev source preserves the iOS IPv6 ioctl with XNU's request layout and a
 compile-time 288-byte buffer assertion. macOS continues using libc's type.
 The standalone Apple ABI checker now includes netdev and checks its pin
 against the active mobile dependency graph. Full SDK builds remain required.
+
+### Darwin routing monitor follow-up
+
+Both cea32f39 iOS lanes reached netwatch 0.19.1 and failed because libc 0.2.190
+limits routing constants to macOS. The local licensed netwatch source restores
+only the XNU constants used by its existing iOS routing parser and monitor.
+The production-lockfile iOS check and standalone iOS/macOS checks pass. Both
+iOS lanes now check the complete Rust graph with the SDK and V8 assets before
+static-library compilation. See IOS_RUNNER_REVIEW.md for the downstream review
+and the remaining real archive, packaging, upload and device validation gates.

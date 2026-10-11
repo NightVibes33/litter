@@ -476,6 +476,19 @@ jobs:
           done
           time cargo fetch             --manifest-path shared/rust-bridge/Cargo.toml             --target aarch64-apple-ios             --target i686-unknown-linux-musl
 
+      - name: Check full iOS Rust graph before static library build
+        if: steps.rust_prebuilt.outputs.available != 'true'
+        run: |
+          set -euo pipefail
+          case "$LITTER_IOS_BUILD_MODE" in
+            fast-device|full-sideload|nyxian-private)
+              ./apps/ios/scripts/build-rust.sh --preserve-current --fast-device --check-device
+              ;;
+            *)
+              ./apps/ios/scripts/build-rust.sh --preserve-current --device-only --check-device
+              ;;
+          esac
+
       - name: Build Rust iOS device library
         if: steps.rust_prebuilt.outputs.available != 'true'
         run: |

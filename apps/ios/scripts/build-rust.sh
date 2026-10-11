@@ -27,6 +27,7 @@ PATCH_FILES=(
 )
 
 SYNC_MODE="--preserve-current"
+CHECK_DEVICE=0
 DEVICE_ONLY=0
 FAST_DEVICE=0
 SIM_ONLY=0
@@ -56,6 +57,11 @@ for arg in "$@"; do
   case "$arg" in
     --preserve-current|--recorded-gitlink)
       SYNC_MODE="$arg"
+      ;;
+    --check-device)
+      CHECK_DEVICE=1
+      DEVICE_ONLY=1
+      SKIP_BINDINGS=1
       ;;
     --device-only)
       DEVICE_ONLY=1
@@ -103,7 +109,7 @@ for arg in "$@"; do
       CARGO_FEATURES="--features rpc-trace"
       ;;
     *)
-      echo "usage: $(basename "$0") [--preserve-current|--recorded-gitlink] [--device-only] [--fast-device] [--fast-sim] [--macabi-only] [--fast-macabi] [--force-bindings] [--skip-bindings] [--rpc-trace]" >&2
+      echo "usage: $(basename "$0") [--preserve-current|--recorded-gitlink] [--device-only] [--check-device] [--fast-device] [--fast-sim] [--macabi-only] [--fast-macabi] [--force-bindings] [--skip-bindings] [--rpc-trace]" >&2
       exit 1
       ;;
   esac
@@ -355,6 +361,12 @@ ios_runtime_cargo() {
   RUSTY_V8_ARCHIVE="$runtime_dir/librusty_v8.a.gz" \
   RUSTY_V8_SRC_BINDING_PATH="$runtime_dir/src_binding.rs" cargo "$@"
 }
+
+if [ "$CHECK_DEVICE" -eq 1 ]; then
+  echo "==> Checking the full iOS Rust dependency graph ($PROFILE)..."
+  ios_runtime_cargo aarch64-apple-ios check --locked --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target aarch64-apple-ios $CARGO_FEATURES
+  exit 0
+fi
 
 if [ "$DEVICE_ONLY" -eq 1 ]; then
   echo "==> Building codex-mobile-client for aarch64-apple-ios ($PROFILE)..."

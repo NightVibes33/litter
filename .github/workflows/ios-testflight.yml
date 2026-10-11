@@ -320,6 +320,7 @@ jobs:
           if [[ "${{ steps.rust_generated_valid.outputs.hit }}" == "true" ]]; then
             echo "==> Using cached TestFlight Rust generated assets"
           else
+            ./apps/ios/scripts/build-rust.sh --preserve-current --device-only --check-device
             ./apps/ios/scripts/build-rust.sh --preserve-current --device-only
           fi
           # build-rust or the exact generated cache already supplied bindings.
