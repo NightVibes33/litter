@@ -1,0 +1,81 @@
+use std::net::Ipv6Addr;
+
+use crate::interface::ipv6_addr_flags::Ipv6AddrFlags;
+
+// Darwin's in6_ifreq is shared by macOS and iOS, but libc 0.2.190
+// exports it only on macOS. Preserve the kernel ABI on iOS. The largest
+// union member is icmp6_ifstat (34 u64 counters); the ioctl encodes 288 bytes.
+// Source: apple-oss-distributions/xnu, bsd/netinet6/in6_var.h.
+#[cfg(target_os = "macos")]
+type In6Ifreq = libc::in6_ifreq;
+
+#[cfg(not(target_os = "macos"))]
+#[repr(C)]
+struct In6Ifreq {
+    ifr_name: [libc::c_char; libc::IFNAMSIZ],
+    ifr_ifru: In6IfrUnion,
+}
+
+#[cfg(not(target_os = "macos"))]
+#[repr(C)]
+union In6IfrUnion {
+    ifru_addr: libc::sockaddr_in6,
+    ifru_flags6: libc::c_int,
+    ifru_icmp6stat: [u64; 34],
+}
+
+// Check the ioctl buffer size on every Darwin target, including macOS's
+// authoritative libc layout, so a change cannot silently truncate it.
+const _: () = {
+    assert!(std::mem::size_of::<In6Ifreq>() == 288);
+    assert!(std::mem::align_of::<In6Ifreq>() == 8);
+    assert!(std::mem::offset_of!(In6Ifreq, ifr_ifru) == 16);
+};
+
+// <netinet6/in6_var.h> — not yet in `libc`.
+const SIOCGIFAFLAG_IN6: libc::c_ulong = 0xC1206949;
+const IN6_IFF_TENTATIVE: u32 = 0x02;
+const IN6_IFF_DUPLICATED: u32 = 0x04;
+const IN6_IFF_DEPRECATED: u32 = 0x10;
+const IN6_IFF_TEMPORARY: u32 = 0x80;
+
+pub(crate) fn get_ipv6_addr_flags(ifname: &str, addr: &Ipv6Addr) -> Ipv6AddrFlags {
+    unsafe {
+        let fd = libc::socket(libc::AF_INET6, libc::SOCK_DGRAM, 0);
+        if fd < 0 {
+            return Ipv6AddrFlags::default();
+        }
+
+        let mut req: In6Ifreq = std::mem::zeroed();
+
+        let name_bytes = ifname.as_bytes();
+        let copy_len = name_bytes.len().min(libc::IFNAMSIZ - 1);
+        std::ptr::copy_nonoverlapping(
+            name_bytes.as_ptr(),
+            req.ifr_name.as_mut_ptr().cast(),
+            copy_len,
+        );
+
+        req.ifr_ifru.ifru_addr.sin6_family = libc::AF_INET6 as libc::sa_family_t;
+        req.ifr_ifru.ifru_addr.sin6_len =
+            std::mem::size_of::<libc::sockaddr_in6>() as libc::c_uchar;
+        req.ifr_ifru.ifru_addr.sin6_addr.s6_addr = addr.octets();
+
+        let ret = libc::ioctl(fd, SIOCGIFAFLAG_IN6, &mut req);
+        libc::close(fd);
+
+        if ret < 0 {
+            return Ipv6AddrFlags::default();
+        }
+
+        let raw = req.ifr_ifru.ifru_flags6 as u32;
+
+        Ipv6AddrFlags {
+            deprecated: raw & IN6_IFF_DEPRECATED != 0,
+            temporary: raw & IN6_IFF_TEMPORARY != 0,
+            tentative: raw & IN6_IFF_TENTATIVE != 0,
+            duplicated: raw & IN6_IFF_DUPLICATED != 0,
+            permanent: false,
+        }
+    }
+}

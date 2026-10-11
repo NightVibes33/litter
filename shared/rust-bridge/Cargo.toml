@@ -99,6 +99,7 @@ debug = 0
 codegen-units = 16
 
 [patch.crates-io]
+netdev = { path = "vendor/netdev-0.45.0" }
 num_threads = { path = "vendor/num_threads-0.1.7" }
 openssl-src = { path = "vendor/openssl-src-300.5.9" }
 russh = { path = "vendor/russh-0.63.2" }

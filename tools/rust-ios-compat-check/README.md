@@ -4,7 +4,7 @@ This standalone package compiles the pure Rust Apple ABI dependency paths used
 by the mobile graph, without requiring Xcode or linking a final app. Rustix 1.x
 enables every API to exercise platform gates; legacy Rustix and both Nix versions
 retain the features selected by the iOS graph. It also checks the local
-num_threads compatibility source against the same libc version.
+num_threads and netdev compatibility sources against the same libc version.
 
 After installing that Rust target, run:
 

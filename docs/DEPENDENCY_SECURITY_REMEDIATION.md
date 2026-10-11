@@ -176,3 +176,12 @@ content consists of the static support pages rather than source/vendor trees.
 The minimal workflow retains its own generated .nojekyll artifact. The next
 legacy build must verify this repair independently of the prior successful
 minimal workflow deployment. No repository settings permissions are bypassed.
+
+### Darwin network interface ABI follow-up
+
+The e05def1 unsigned and TestFlight runs reached netdev 0.45.0 and failed
+because libc 0.2.190 exposes in6_ifreq only on macOS. The local licensed
+netdev source preserves the iOS IPv6 ioctl with XNU's request layout and a
+compile-time 288-byte buffer assertion. macOS continues using libc's type.
+The standalone Apple ABI checker now includes netdev and checks its pin
+against the active mobile dependency graph. Full SDK builds remain required.

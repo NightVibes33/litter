@@ -1,0 +1,48 @@
+--- a/src/os/darwin/ipv6_addr_flags.rs
++++ b/src/os/darwin/ipv6_addr_flags.rs
+@@ -1,6 +1,36 @@
+ use std::net::Ipv6Addr;
+ 
+ use crate::interface::ipv6_addr_flags::Ipv6AddrFlags;
++
++// Darwin's in6_ifreq is shared by macOS and iOS, but libc 0.2.190
++// exports it only on macOS. Preserve the kernel ABI on iOS. The largest
++// union member is icmp6_ifstat (34 u64 counters); the ioctl encodes 288 bytes.
++// Source: apple-oss-distributions/xnu, bsd/netinet6/in6_var.h.
++#[cfg(target_os = "macos")]
++type In6Ifreq = libc::in6_ifreq;
++
++#[cfg(not(target_os = "macos"))]
++#[repr(C)]
++struct In6Ifreq {
++    ifr_name: [libc::c_char; libc::IFNAMSIZ],
++    ifr_ifru: In6IfrUnion,
++}
++
++#[cfg(not(target_os = "macos"))]
++#[repr(C)]
++union In6IfrUnion {
++    ifru_addr: libc::sockaddr_in6,
++    ifru_flags6: libc::c_int,
++    ifru_icmp6stat: [u64; 34],
++}
++
++// Check the ioctl buffer size on every Darwin target, including macOS's
++// authoritative libc layout, so a change cannot silently truncate it.
++const _: () = {
++    assert!(std::mem::size_of::<In6Ifreq>() == 288);
++    assert!(std::mem::align_of::<In6Ifreq>() == 8);
++    assert!(std::mem::offset_of!(In6Ifreq, ifr_ifru) == 16);
++};
+ 
+ // <netinet6/in6_var.h> — not yet in `libc`.
+ const SIOCGIFAFLAG_IN6: libc::c_ulong = 0xC1206949;
+@@ -16,7 +46,7 @@
+             return Ipv6AddrFlags::default();
+         }
+ 
+-        let mut req: libc::in6_ifreq = std::mem::zeroed();
++        let mut req: In6Ifreq = std::mem::zeroed();
+ 
+         let name_bytes = ifname.as_bytes();
+         let copy_len = name_bytes.len().min(libc::IFNAMSIZ - 1);
