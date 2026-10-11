@@ -438,7 +438,7 @@ impl AppStoreReducer {
                 approval
                     .thread_id
                     .as_deref()
-                    .is_none_or(|tid| !removed_thread_keys.iter().any(|key| key.thread_id == tid))
+                    .is_none_or(|tid| !removed_thread_keys.iter().any(|key: &ThreadKey| key.thread_id == tid))
             });
             snapshot
                 .pending_approval_seeds
