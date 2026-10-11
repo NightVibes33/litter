@@ -225,7 +225,7 @@ struct ConversationComposerTextView: UIViewRepresentable {
                 parent.text = updatedText
             }
             updateSelectedRange(from: textView)
-            applyMentionHighlight(to: textView)
+            scheduleMentionHighlight(for: textView)
             // While focused the view is already scroll-enabled. Avoid forcing
             // TextKit to measure the entire draft again for every keystroke.
             if !textView.isFirstResponder {
@@ -280,6 +280,17 @@ struct ConversationComposerTextView: UIViewRepresentable {
         private var lastHighlightedText: String?
         private var lastHighlightNames: Set<String> = []
         private var hasAppliedHighlight = false
+        private var mentionHighlightWorkItem: DispatchWorkItem?
+
+        func scheduleMentionHighlight(for textView: UITextView) {
+            mentionHighlightWorkItem?.cancel()
+            let work = DispatchWorkItem { [weak self, weak textView] in
+                guard let self, let textView, !work.isCancelled else { return }
+                self.applyMentionHighlight(to: textView)
+            }
+            mentionHighlightWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
+        }
 
         func invalidateMentionHighlight() {
             lastHighlightedText = nil
