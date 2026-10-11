@@ -577,7 +577,7 @@ impl AppStoreReducer {
                 !(request.server_id == server_id
                     && removed_thread_keys
                         .iter()
-                        .any(|key| key.thread_id == request.thread_id))
+                        .any(|key: &ThreadKey| key.thread_id == request.thread_id))
             });
             if snapshot.pending_user_inputs.len() != pending_user_inputs_before {
                 pending_user_inputs = Some(snapshot.pending_user_inputs.clone());
@@ -732,7 +732,7 @@ impl AppStoreReducer {
                 !(request.server_id == server_id
                     && removed_thread_keys
                         .iter()
-                        .any(|key| key.thread_id == request.thread_id))
+                        .any(|key: &ThreadKey| key.thread_id == request.thread_id))
             });
             if snapshot.pending_user_inputs.len() != pending_user_inputs_before {
                 pending_user_inputs = Some(snapshot.pending_user_inputs.clone());
