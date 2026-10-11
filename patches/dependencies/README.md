@@ -1,0 +1,1 @@
+These diffs record the root-owned changes to immutable upstream dependency snapshots in shared/rust-bridge/vendor. They make the backend/API changes reviewable separately from unchanged vendored sources. The source tree already contains these changes; build scripts do not apply them again. See each LITTER_PATCHES.md for provenance and compatibility limits.

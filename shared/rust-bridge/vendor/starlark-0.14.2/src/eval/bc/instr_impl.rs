@@ -21,9 +21,11 @@ use std::cmp::Ordering;
 use std::marker;
 use std::ptr;
 
+use starlark_derive::StarlarkPagable;
 use starlark_syntax::eval_exception::EvalException;
 use starlark_syntax::internal_error;
 
+use crate as starlark;
 use crate::coerce::coerce;
 use crate::collections::Hashed;
 use crate::collections::SmallMap;
@@ -994,7 +996,7 @@ impl InstrNoFlowImpl for InstrDictOfConstsImpl {
         _: BcPtrAddr,
         (values, target): &(SmallMap<FrozenValue, FrozenValue>, BcSlotOut),
     ) -> crate::Result<()> {
-        let dict = eval.heap().alloc(Dict::new((*coerce(values)).clone()));
+        let dict = eval.heap().alloc_dict((*coerce(values)).clone());
         frame.set_bc_slot(*target, dict);
         Ok(())
     }
@@ -1030,7 +1032,7 @@ impl InstrNoFlowImpl for InstrDictNPopImpl {
                 return Err(add_span_to_expr_error(e, spans[i], eval).into_error());
             }
         }
-        let dict = eval.heap().alloc(Dict::new(dict));
+        let dict = eval.heap().alloc_dict(dict);
         frame.set_bc_slot(*target, dict);
         Ok(())
     }
@@ -1051,7 +1053,7 @@ impl InstrNoFlowImpl for InstrDictConstKeysImpl {
             let prev = dict.insert_hashed(*k, *v);
             debug_assert!(prev.is_none());
         }
-        let dict = eval.heap().alloc(Dict::new(coerce(dict)));
+        let dict = eval.heap().alloc_dict(coerce(dict));
         frame.set_bc_slot(*target, dict);
         Ok(())
     }
@@ -1393,7 +1395,7 @@ impl BcInstr for InstrReturnCheckType {
 pub(crate) struct InstrDefImpl;
 pub(crate) type InstrDef = InstrNoFlow<InstrDefImpl>;
 
-#[derive(Debug)]
+#[derive(Debug, StarlarkPagable)]
 pub(crate) struct InstrDefData {
     pub(crate) function_name: String,
     pub(crate) params: ParametersCompiled<u32>,

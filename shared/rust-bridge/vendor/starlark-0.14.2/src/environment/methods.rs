@@ -15,8 +15,10 @@
  * limitations under the License.
  */
 
+use std::sync::OnceLock;
+
 use dupe::Dupe;
-use once_cell::sync::OnceCell;
+use pagable::StaticStr;
 use starlark_map::Hashed;
 
 use crate::__derive_refs::components::NativeCallableComponents;
@@ -49,11 +51,11 @@ pub struct Methods {
 }
 
 /// Heap name for a [`Methods`] object, used for heap graph tracking.
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, pagable::Pagable)]
 pub struct MethodFrozenHeapName {
     /// A name identifying this methods heap (e.g. type name like "dict",
     /// or a module path like "starlark::values::types::dict::methods::dict_methods").
-    pub name: &'static str,
+    pub name: StaticStr,
 }
 
 impl std::fmt::Display for MethodFrozenHeapName {
@@ -276,8 +278,8 @@ impl MethodsBuilder {
 /// }
 /// ```
 pub struct MethodsStatic {
-    cell: OnceCell<Methods>,
-    name: &'static str,
+    cell: OnceLock<Methods>,
+    name: StaticStr,
     init: fn(&mut MethodsBuilder),
 }
 
@@ -285,9 +287,9 @@ impl MethodsStatic {
     /// Create a new [`MethodsStatic`]. Prefer the
     /// [`methods_static!`](crate::methods_static) macro, which fills in `name`
     /// from the call site.
-    pub const fn new(name: &'static str, init: fn(&mut MethodsBuilder)) -> MethodsStatic {
+    pub const fn new(name: StaticStr, init: fn(&mut MethodsBuilder)) -> MethodsStatic {
         MethodsStatic {
-            cell: OnceCell::new(),
+            cell: OnceLock::new(),
             name,
             init,
         }
@@ -336,11 +338,13 @@ impl MethodsStatic {
 #[macro_export]
 macro_rules! methods_static {
     ($vis:vis $name:ident = $init:expr) => {
-        $vis static $name: $crate::__derive_refs::MethodsStatic =
-            $crate::__derive_refs::MethodsStatic::new(
-                concat!(module_path!(), "::", stringify!($name)),
-                $init,
+        $vis static $name: $crate::__derive_refs::MethodsStatic = {
+            $crate::__derive_refs::static_str!(
+                __METHOD_HEAP_NAME =
+                concat!(module_path!(), "::", stringify!($name))
             );
+            $crate::__derive_refs::MethodsStatic::new(__METHOD_HEAP_NAME, $init)
+        };
 
         $crate::__derive_refs::inventory::submit! {
             $crate::__derive_refs::StaticHeapEntry {

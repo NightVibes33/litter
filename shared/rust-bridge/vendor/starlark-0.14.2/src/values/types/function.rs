@@ -18,7 +18,7 @@
 //! Function types, including native functions and `object.member` functions.
 
 use allocative::Allocative;
-use derivative::Derivative;
+use derive_more::Debug as Derivative;
 use derive_more::Display;
 use dupe::Dupe;
 use starlark_derive::NoSerialize;
@@ -115,10 +115,9 @@ impl NativeFunc {
     Allocative,
     crate::StarlarkPagable
 )]
-#[derivative(Debug)]
 #[display("{}", name)]
 pub(crate) struct NativeFunction {
-    #[derivative(Debug = "ignore")]
+    #[debug(skip)]
     pub(crate) function: NativeFunc,
     pub(crate) name: String,
     /// `.type` attribute and a type when this function is used in type expression.
@@ -128,7 +127,7 @@ pub(crate) struct NativeFunction {
     pub(crate) ty: Ty,
     /// Safe to evaluate speculatively.
     pub(crate) speculative_exec_safe: bool,
-    #[derivative(Debug = "ignore")]
+    #[debug(skip)]
     #[starlark_pagable(pagable)]
     pub(crate) docs: DocItem,
     #[starlark_pagable(pagable)]
@@ -277,17 +276,16 @@ impl NativeMeth {
     Allocative,
     crate::StarlarkPagable
 )]
-#[derivative(Debug)]
 #[display("{}", name)]
 pub(crate) struct NativeMethod {
-    #[derivative(Debug = "ignore")]
+    #[debug(skip)]
     pub(crate) function: NativeMeth,
     pub(crate) name: String,
     #[starlark_pagable(pagable)]
     pub(crate) ty: Ty,
     /// Safe to evaluate speculatively.
     pub(crate) speculative_exec_safe: bool,
-    #[derivative(Debug = "ignore")]
+    #[debug(skip)]
     #[starlark_pagable(pagable)]
     pub(crate) docs: DocItem,
 }
@@ -316,7 +314,6 @@ impl<'v> StarlarkValue<'v> for NativeMethod {
     crate::StarlarkPagable
 )]
 #[display("Attribute")]
-#[derivative(Debug)]
 pub(crate) struct NativeAttribute {
     /// Safe to evaluate speculatively.
     pub(crate) speculative_exec_safe: bool,

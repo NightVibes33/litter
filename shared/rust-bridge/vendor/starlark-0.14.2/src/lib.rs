@@ -271,7 +271,7 @@
 //!         // After creating a module we freeze it, preventing further mutation.
 //!         // It can now be used as the input for other Starlark modules.
 //!         // Each frozen module is given a name to identify its heap.
-//!         Ok(module.freeze_named(FrozenHeapName::User(Box::new(file.to_owned())))?)
+//!         Ok(module.freeze_named(FrozenHeapName::user(file))?)
 //!     })
 //! }
 //!
@@ -417,7 +417,7 @@
 #![cfg_attr(rust_nightly, allow(internal_features))]
 #![cfg_attr(rust_nightly, feature(const_type_id))]
 #![cfg_attr(rust_nightly, feature(core_intrinsics))]
-#![cfg_attr(rust_nightly, feature(cfg_sanitize))]
+#![cfg_attr(all(test, rust_nightly), feature(cfg_sanitize))]
 #![cfg_attr(rust_nightly, feature(cold_path))]
 #![cfg_attr(rust_nightly, feature(const_type_name))]
 // Good reasons

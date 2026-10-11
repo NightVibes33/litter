@@ -1,0 +1,1 @@
+Pinned facebook/starlark-rust commit 3bed1c40f93da22b8e251dd520dfb8d35bfe1fb7. Replaces AstModule derivative Debug/Clone with maintained derive_more Debug and standard Clone. The code map remains omitted from Debug. Inherited dependencies point to the same immutable upstream revision.

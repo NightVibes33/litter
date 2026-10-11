@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "security-compat-tests",
     "codex-slingshot",
     "codex-mobile-client",
     "uniffi-bindgen",
@@ -40,7 +41,7 @@ tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
 thiserror = "2"
 tracing = "0.1"
 async-trait = "0.1"
-lru = "0.12"
+lru = "0.18.2"
 chrono = { version = "0.4", features = ["serde"] }
 regex = "1"
 base64 = "0.22"
@@ -48,7 +49,7 @@ bytes = "1.10.1"
 sha2 = "0.10"
 p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
-russh = "0.62.6"
+russh = "0.63.2"
 futures = "0.3"
 url = "2.5"
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -98,13 +99,26 @@ debug = 0
 codegen-units = 16
 
 [patch.crates-io]
+openssl-src = { path = "vendor/openssl-src-300.5.9" }
+russh = { path = "vendor/russh-0.63.2" }
+ssh-key = { path = "vendor/ssh-key-0.7.0-rc.11" }
+i18n-embed-fl = { path = "vendor/i18n-embed-fl-0.9.4" }
+paste = { path = "vendor/security-compat/paste" }
+json = { path = "vendor/security-compat/json" }
+ansi_term = { path = "vendor/security-compat/ansi_term" }
+fxhash = { path = "vendor/security-compat/fxhash" }
+atomic-polyfill = { path = "vendor/security-compat/atomic-polyfill" }
+
+rama-core = { path = "vendor/rama-core-0.3.0-alpha.4" }
+opentelemetry-http = { path = "vendor/opentelemetry-http-0.32.0" }
+rama-dns = { path = "vendor/rama-dns-0.3.0-alpha.4" }
 rquickjs-sys = { path = "vendor/rquickjs-sys-0.9.0" }
 iroh-base = { path = "vendor/iroh-base-0.98.0" }
 pagable = { path = "vendor/pagable-0.4.1" }
 rama-http = { path = "vendor/rama-http-0.3.0-alpha.4" }
 pqcrypto-internals = { path = "vendor/pqcrypto-internals-0.2.6-ios-safe" }
 # Upstream fix for Starlark's exact blake3 pin, which conflicts with iroh.
-starlark = { git = "https://github.com/facebook/starlark-rust", rev = "3bed1c40f93da22b8e251dd520dfb8d35bfe1fb7" }
+starlark = { path = "vendor/starlark-0.14.2" }
 
 tokio-tungstenite = { git = "https://github.com/openai-oss-forks/tokio-tungstenite", rev = "0e5b2d73aa18dd9f0a50ee9ff199d5aef7594186" }
 tungstenite = { git = "https://github.com/openai-oss-forks/tungstenite-rs", rev = "4fffad30fe373adbdcffab9545e9e9bf4f2fc19f" }

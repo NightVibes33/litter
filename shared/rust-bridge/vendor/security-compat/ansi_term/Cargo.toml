@@ -1,0 +1,13 @@
+[package]
+name = "ansi_term"
+version = "0.12.1"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[dependencies]
+nu-ansi-term = "0.50.3"
+
+[features]
+default = []
+derive_serde_style = ["nu-ansi-term/serde"]

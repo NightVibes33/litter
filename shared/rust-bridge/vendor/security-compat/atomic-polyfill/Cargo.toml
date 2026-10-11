@@ -1,0 +1,9 @@
+[package]
+name = "atomic-polyfill"
+version = "1.0.3"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[dependencies]
+portable-atomic = { version = "1.13", default-features = false, features = ["fallback", "critical-section"] }

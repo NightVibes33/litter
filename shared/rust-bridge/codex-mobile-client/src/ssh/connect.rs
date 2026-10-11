@@ -8,15 +8,15 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
 use russh::client::{self, Handle};
-use russh::keys::{HashAlg, PrivateKeyWithHashAlg, PublicKey, decode_secret_key};
+use russh::keys::PublicKeyOrCertificate;
+use russh::keys::{decode_secret_key, HashAlg, PrivateKeyWithHashAlg};
 use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
 use super::{
-    CONNECT_TIMEOUT, KEEPALIVE_INTERVAL, SSH_CHANNEL_BUFFER_SIZE, SSH_CHANNEL_WINDOW_SIZE,
-    SSH_MAX_PACKET_SIZE, SshAuth, SshClient, SshCredentials, SshDetection, SshError,
-    append_bridge_info_log,
-    normalize_host,
+    append_bridge_info_log, normalize_host, SshAuth, SshClient, SshCredentials, SshDetection,
+    SshError, CONNECT_TIMEOUT, KEEPALIVE_INTERVAL, SSH_CHANNEL_BUFFER_SIZE,
+    SSH_CHANNEL_WINDOW_SIZE, SSH_MAX_PACKET_SIZE,
 };
 
 pub(super) type HostKeyCallback = Arc<dyn Fn(&str) -> BoxFuture<'static, bool> + Send + Sync>;
@@ -34,13 +34,19 @@ impl client::Handler for ClientHandler {
 
     fn check_server_key(
         &mut self,
-        server_public_key: &PublicKey,
+        server_public_key: &PublicKeyOrCertificate,
     ) -> impl std::future::Future<Output = Result<bool, Self::Error>> + Send {
-        let fp = format!("{}", server_public_key.fingerprint(HashAlg::Sha256));
+        let fp = format!(
+            "{}",
+            server_public_key.public_key().fingerprint(HashAlg::Sha256)
+        );
+        // Certificate authority/principal trust is not represented by the
+        // fingerprint callback. Keep accepting only explicitly approved raw keys.
+        let is_certificate = server_public_key.certificate().is_some();
         let rejected_fingerprint = Arc::clone(&self.rejected_fingerprint);
         let callback = Arc::clone(&self.host_key_cb);
         async move {
-            let accepted = callback(&fp).await;
+            let accepted = !is_certificate && callback(&fp).await;
             if !accepted {
                 *rejected_fingerprint.lock().await = Some(fp);
             }
@@ -254,5 +260,63 @@ impl SshClient {
         let _ = handle
             .disconnect(russh::Disconnect::ByApplication, "bye", "en")
             .await;
+    }
+}
+
+#[cfg(test)]
+mod host_key_tests {
+    use super::*;
+    use russh::client::Handler as _;
+    use russh::keys::{Algorithm, PrivateKey};
+
+    fn test_key() -> PrivateKey {
+        PrivateKey::random(&mut russh::keys::key::safe_rng(), Algorithm::Ed25519).unwrap()
+    }
+
+    fn handler(accept: bool) -> ClientHandler {
+        ClientHandler {
+            host_key_cb: Arc::new(move |_| Box::pin(async move { accept })),
+            rejected_fingerprint: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    #[tokio::test]
+    async fn approved_raw_host_key_is_accepted() {
+        let key = test_key().public_key().clone().into();
+        let mut client = handler(true);
+        assert!(client.check_server_key(&key).await.unwrap());
+        assert!(client.rejected_fingerprint.lock().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn rejected_raw_host_key_records_its_fingerprint() {
+        let public_key = test_key().public_key().clone();
+        let fingerprint = public_key.fingerprint(HashAlg::Sha256).to_string();
+        let mut client = handler(false);
+        assert!(!client.check_server_key(&public_key.into()).await.unwrap());
+        assert_eq!(
+            client.rejected_fingerprint.lock().await.as_deref(),
+            Some(fingerprint.as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn certificate_cannot_bypass_raw_key_approval_policy() {
+        use russh::keys::ssh_key::certificate::{Builder, CertType};
+        let key = test_key();
+        let mut builder = Builder::new(
+            vec![1; 32],
+            key.public_key().key_data().clone(),
+            0,
+            u64::MAX,
+        )
+        .unwrap();
+        builder.cert_type(CertType::Host).unwrap();
+        builder.key_id("host-key-policy-test").unwrap();
+        builder.valid_principal("localhost").unwrap();
+        let certificate = builder.sign(&key).unwrap();
+        let mut client = handler(true);
+        assert!(!client.check_server_key(&certificate.into()).await.unwrap());
+        assert!(client.rejected_fingerprint.lock().await.is_some());
     }
 }

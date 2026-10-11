@@ -1,0 +1,1 @@
+Vendored Rama Core 0.3.0-alpha.4, retaining original licenses. OpenTelemetry dependencies move together to 0.32, with SDK 0.32.1 or later, so optional telemetry graphs do not retain the vulnerable SDK.

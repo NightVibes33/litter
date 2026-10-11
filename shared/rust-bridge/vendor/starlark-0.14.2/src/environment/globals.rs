@@ -16,16 +16,16 @@
  */
 
 use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::OnceLock;
 
 use allocative::Allocative;
 use dupe::Dupe;
 use itertools::Itertools;
-use once_cell::sync::OnceCell;
 use pagable::PagableDeserialize;
 use pagable::PagableDeserializer;
 use pagable::PagableSerialize;
 use pagable::PagableSerializer;
+use pagable::StaticStr;
 
 use crate as starlark;
 use crate::__derive_refs::components::NativeCallableComponents;
@@ -41,7 +41,6 @@ use crate::pagable::StarlarkDeserialize;
 use crate::pagable::StarlarkDeserializerImpl;
 use crate::pagable::StarlarkSerialize;
 use crate::pagable::StarlarkSerializerImpl;
-use crate::pagable::starlark_deserialize_context::HeapDeserializationState;
 use crate::register_starlark_any;
 use crate::stdlib;
 pub use crate::stdlib::LibraryExtension;
@@ -80,13 +79,13 @@ impl PagableSerialize for GlobalsData {
         // Serialize the heap (via pagable arc — actual heap data may be deferred).
         self.heap.pagable_serialize(serializer)?;
 
-        // Force-register offset maps for the heap and its transitive deps. The
+        // Force-register chunk indices for the heap and its transitive deps. The
         // pagable arc may not run heap serialization yet, but we need the
-        // offset maps now so the upcoming starlark serializer can resolve
+        // chunk indices now so the upcoming starlark serializer can resolve
         // FrozenValue pointers. Same trick as `OwnedFrozenValue` and
         // `FrozenModule`.
         let state = StarlarkSerializerImpl::get_or_create_state(serializer);
-        state.ensure_offset_maps_registered(&self.heap);
+        state.ensure_chunk_index_registered(&self.heap)?;
         let mut ctx = StarlarkSerializerImpl::new(serializer, state);
 
         self.variables
@@ -109,15 +108,10 @@ impl<'de> PagableDeserialize<'de> for GlobalsData {
     ) -> pagable::Result<Self> {
         let heap = FrozenHeapRef::pagable_deserialize(deserializer)?;
 
-        // Empty `HeapDeserializationState` — the owner heap is fully
-        // deserialized at this point, so `ensure_initialized` is a no-op for
-        // any pointer we resolve into it.
-        let state = StarlarkDeserializerImpl::get_or_create_state(deserializer.as_dyn());
-        let mut ctx = StarlarkDeserializerImpl::new(
-            deserializer.as_dyn(),
-            state,
-            Arc::new(Mutex::new(HeapDeserializationState::empty())),
-        );
+        // The preceding heap deserialization registers its heap state in this
+        // page-in scope, so Starlark fields can resolve `FrozenValue` pointers.
+        let mut ctx = StarlarkDeserializerImpl::recover_from_pagable(deserializer.as_dyn())
+            .map_err(|e: crate::Error| e.into_anyhow())?;
 
         let variables = <SymbolMap<GlobalValue>>::starlark_deserialize(&mut ctx)
             .map_err(|e: crate::Error| e.into_anyhow())?;
@@ -137,10 +131,10 @@ impl<'de> PagableDeserialize<'de> for GlobalsData {
 }
 
 /// Heap name for a [`Globals`] object, used for heap graph tracking.
-#[derive(Debug, Clone, Copy, Hash)]
+#[derive(Debug, Clone, Copy, Hash, pagable::Pagable)]
 pub struct GlobalFrozenHeapName {
     /// A name identifying this globals heap.
-    pub name: &'static str,
+    pub name: StaticStr,
 }
 
 impl std::fmt::Display for GlobalFrozenHeapName {
@@ -435,8 +429,8 @@ impl GlobalsBuilder {
 /// [`globals_static!`](crate::globals_static) macro; the globals are built on
 /// first access via the supplied initializer.
 pub struct GlobalsStatic {
-    cell: OnceCell<Globals>,
-    name: &'static str,
+    cell: OnceLock<Globals>,
+    name: StaticStr,
     init: fn(&mut GlobalsBuilder),
 }
 
@@ -444,9 +438,9 @@ impl GlobalsStatic {
     /// Create a new [`GlobalsStatic`]. Prefer the
     /// [`globals_static!`](crate::globals_static) macro, which fills in `name`
     /// from the call site.
-    pub const fn new(name: &'static str, init: fn(&mut GlobalsBuilder)) -> GlobalsStatic {
+    pub const fn new(name: StaticStr, init: fn(&mut GlobalsBuilder)) -> GlobalsStatic {
         GlobalsStatic {
-            cell: OnceCell::new(),
+            cell: OnceLock::new(),
             name,
             init,
         }
@@ -503,11 +497,13 @@ impl GlobalsStatic {
 macro_rules! globals_static {
     ($vis:vis $name:ident = $init:expr) => {
         #[allow(dead_code)]
-        $vis static $name: $crate::__derive_refs::GlobalsStatic =
-            $crate::__derive_refs::GlobalsStatic::new(
-                concat!(module_path!(), "::", stringify!($name)),
-                $init,
+        $vis static $name: $crate::__derive_refs::GlobalsStatic = {
+            $crate::__derive_refs::static_str!(
+                __GLOBAL_HEAP_NAME =
+                concat!(module_path!(), "::", stringify!($name))
             );
+            $crate::__derive_refs::GlobalsStatic::new(__GLOBAL_HEAP_NAME, $init)
+        };
 
         $crate::__derive_refs::inventory::submit! {
             $crate::__derive_refs::StaticHeapEntry {

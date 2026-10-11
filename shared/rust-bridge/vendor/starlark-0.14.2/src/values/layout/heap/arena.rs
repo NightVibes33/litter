@@ -29,6 +29,7 @@
 use std::collections::HashMap;
 use std::mem;
 use std::mem::MaybeUninit;
+use std::num::NonZeroU32;
 use std::ptr;
 use std::slice;
 
@@ -112,6 +113,21 @@ impl<'de> PagableDeserialize<'de> for BumpKind {
 pub(crate) struct ArenaOffset {
     pub(crate) bump: BumpKind,
     pub(crate) offset: u32,
+}
+
+/// Per-chunk record returned by [`Arena::build_chunk_index`]. One entry
+/// per allocated chunk in serialization order (drop bump, then non-drop).
+#[derive(Debug)]
+pub(crate) struct ChunkInfo {
+    /// Chunk's base address.
+    pub(crate) base: usize,
+    /// Chunk size in bytes.
+    pub(crate) size: u32,
+    /// Cumulative count of values in earlier chunks (this heap's
+    /// serialization order).
+    pub(crate) values_before: u32,
+    /// Sorted within-chunk byte offsets of each live value payload pointer.
+    pub(crate) payload_offsets: Vec<u32>,
 }
 
 /// Cursor for writing values into a pre-allocated raw block in the arena.
@@ -440,32 +456,35 @@ impl<A: ArenaAllocator> Arena<A> {
         Self::collect_bump_headers_ordered(&self.non_drop)
     }
 
-    /// Allocate a raw block in the `drop` bump and return a cursor for filling values.
-    /// Returns `None` if `total_bytes` is 0.
-    pub(crate) fn alloc_raw_drop_cursor(&self, total_bytes: u32) -> Option<ArenaRawCursor> {
-        Self::alloc_raw_cursor(&self.drop, total_bytes)
+    /// Allocate space for a single value of `alloc_size` bytes in the given
+    /// bump and return a pointer to its `AValueHeader`. Used by partial-deser
+    /// to allocate values one at a time.
+    pub(crate) fn alloc_raw_one(
+        &self,
+        bump_kind: BumpKind,
+        alloc_size: NonZeroU32,
+    ) -> *mut AValueHeader {
+        let bump = match bump_kind {
+            BumpKind::Drop => &self.drop,
+            BumpKind::NonDrop => &self.non_drop,
+        };
+        let mut cursor = Self::alloc_raw_cursor(bump, alloc_size);
+        // SAFETY: cursor has exactly alloc_size bytes available.
+        unsafe { cursor.next(alloc_size.get()) }
     }
 
-    /// Allocate a raw block in the `non_drop` bump and return a cursor for filling values.
-    /// Returns `None` if `total_bytes` is 0.
-    pub(crate) fn alloc_raw_non_drop_cursor(&self, total_bytes: u32) -> Option<ArenaRawCursor> {
-        Self::alloc_raw_cursor(&self.non_drop, total_bytes)
-    }
-
-    fn alloc_raw_cursor(bump: &A, total_bytes: u32) -> Option<ArenaRawCursor> {
-        if total_bytes == 0 {
-            return None;
-        }
+    fn alloc_raw_cursor(bump: &A, total_bytes: NonZeroU32) -> ArenaRawCursor {
+        let total_bytes = total_bytes.get();
         let size = ValueAllocSize::new(AlignedSize::new_bytes(total_bytes as usize));
         let block = bump.alloc(size);
         let cursor = match A::CHUNK_ALLOCATION_DIRECTION {
             ChunkAllocationDirection::Up => block.as_ptr(),
             ChunkAllocationDirection::Down => unsafe { block.as_ptr().add(total_bytes as usize) },
         };
-        Some(ArenaRawCursor {
+        ArenaRawCursor {
             cursor,
             direction: A::CHUNK_ALLOCATION_DIRECTION,
-        })
+        }
     }
 
     fn collect_bump_headers_ordered(bump: &A) -> Vec<&AValueHeader> {
@@ -478,30 +497,60 @@ impl<A: ArenaAllocator> Arena<A> {
         headers
     }
 
-    /// Build a map from raw header pointer address to `value_index`.
-    /// Indices follow serialization order: drop bump first, then non-drop.
-    pub(crate) fn build_ptr_to_value_index_map(&self) -> HashMap<usize, u32> {
-        let mut map = HashMap::new();
-        let mut next_index: u32 = 0;
+    pub(crate) fn allocated_chunk_bases(&self) -> Vec<usize> {
+        fn append<A: ArenaAllocator>(bump: &A, bases: &mut Vec<usize>) {
+            bases.extend(
+                unsafe { bump.iter_allocated_chunks_rev() }.map(|chunk| chunk.as_ptr() as usize),
+            );
+        }
+
+        let mut bases = Vec::new();
+        append(&self.drop, &mut bases);
+        append(&self.non_drop, &mut bases);
+        bases
+    }
+
+    /// Per-chunk index for serialization-time `ptr → value_index` lookup.
+    /// Entries are in serialization order (drop bump first, then non-drop).
+    pub(crate) fn build_chunk_index(&self) -> Vec<ChunkInfo> {
+        let mut entries = Vec::new();
+        let mut values_before: u32 = 0;
 
         fn build_for_bump<A: ArenaAllocator>(
             bump: &A,
-            map: &mut HashMap<usize, u32>,
-            next_index: &mut u32,
+            entries: &mut Vec<ChunkInfo>,
+            values_before: &mut u32,
         ) {
-            Arena::<A>::for_each_bump_ordered(bump, |value| {
-                if let Some(header) = value.unpack_header() {
-                    let ptr_addr = header.payload_ptr().ptr as usize;
-                    map.insert(ptr_addr, *next_index);
-                    *next_index += 1;
-                }
-            });
+            // `iter_allocated_chunks_rev` yields newest-first; reverse for
+            // allocation order so `values_before` is monotonic.
+            let chunks_rev: Vec<&[MaybeUninit<u8>]> =
+                unsafe { bump.iter_allocated_chunks_rev() }.collect();
+            for chunk in chunks_rev.iter().rev() {
+                let base = chunk.as_ptr() as usize;
+                let size = chunk.len() as u32;
+                let mut payload_offsets: Vec<u32> = Arena::<A>::iter_chunk(chunk)
+                    .filter_map(|x| x.unpack_header())
+                    .map(|hp| (hp.payload_ptr().ptr as usize - base) as u32)
+                    .collect();
+                // Sort for binary_search at lookup time. For `Up` allocators
+                // this is a no-op (already ascending); kept for safety across
+                // allocator directions.
+                payload_offsets.sort_unstable();
+                let count = payload_offsets.len() as u32;
+                entries.push(ChunkInfo {
+                    base,
+                    size,
+                    values_before: *values_before,
+                    payload_offsets,
+                });
+                *values_before += count;
+            }
         }
 
-        build_for_bump(&self.drop, &mut map, &mut next_index);
-        build_for_bump(&self.non_drop, &mut map, &mut next_index);
+        build_for_bump(&self.drop, &mut entries, &mut values_before);
+        build_for_bump(&self.non_drop, &mut entries, &mut values_before);
 
-        map
+        entries
     }
 
     pub(crate) unsafe fn visit_arena<'v>(

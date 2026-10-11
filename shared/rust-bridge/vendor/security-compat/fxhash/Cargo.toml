@@ -1,0 +1,9 @@
+[package]
+name = "fxhash"
+version = "0.2.1"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[dependencies]
+maintained-fxhash = { package = "ccl-fxhash", version = "3.0.0" }

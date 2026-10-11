@@ -93,27 +93,35 @@ Android and Catalyst do not acquire the V8 production dependency. See
 
 ## P0 — dependency security
 
-RustSec was rerun on 2026-09-21 against both candidate lockfiles after updating
-Codex to 0.155.1 and applying compatible h2 0.4.16 and rustls 0.23.45 security
-patches. Five advisories remain in the shared mobile lock and four in the
-packaged Kittylitter lock. These are advisory counts, not affected-package counts.
+The 2026-10-10 security candidate upgrades the vulnerable Git, DNS, TLS,
+archive, AWS JSON, JWT, SSH, and telemetry dependency families, including the
+standalone vendor lockfiles. The registry inventory is reproducible with
+`tools/scripts/audit-rust-dependencies.py`; local compatibility adapters require
+source review in addition to registry checks.
 
-- Mobile: Hickory 0.25.2 through upstream Rama DNS retains
-  `RUSTSEC-2026-0119` and `RUSTSEC-2026-0118`. Moving to Hickory 0.26 requires
-  an upstream dependency/API change.
-- Packaged host: Iroh 0.98.2 and iroh-relay 0.98.0 pin Hickory exactly to
-  0.26.0-beta.4, retaining `RUSTSEC-2026-0120` and `RUSTSEC-2026-0119`.
-- Both: plist 1.9.0 through netdev/netwatch retains quick-xml 0.39.2 and
-  `RUSTSEC-2026-0195` / `RUSTSEC-2026-0194`; the fixed quick-xml 0.41 line
-  requires a compatible upstream plist contract.
-- Mobile: RSA 0.10.0-rc.18 retains `RUSTSEC-2023-0071`, with no patched
-  release reported by RustSec.
+The next candidate registry inventory reports zero advisories across nine tracked
+Cargo lockfiles. Maintenance implementations are replaced by maintained
+backends, and SSH RSA now uses AWS-LC; optional idevice classic certificates use
+OpenSSL. Both Rust source bundles now use OpenSSL 3.5.9, and Feather's
+binary wrapper uses 3.6.5; the inventory separately checks the native source
+release baseline. The report explicitly inventories local/Git packages requiring source
+review. These source replacements need compatibility and cryptographic review,
+not merely a registry scan. See
+[`DEPENDENCY_SECURITY_REMEDIATION.md`](DEPENDENCY_SECURITY_REMEDIATION.md) for
+changes, RSA minimum-key/SHA-1 compatibility limits, and validation.
 
-**Do not suppress these advisories.** Preserve these upstream upgrade tracks,
-rerun RustSec after compatibility changes, and verify network, SSH, MCP, and
-pairing on installed devices. A successful build is not physical-device network
-acceptance. Mobile uses Iroh 1.0.3 and Russh 0.62.6; the separately packaged host's
-Iroh version above must not be confused with the mobile dependency.
+Swift Crypto, NIO, HTTP/2, SSL, and Vapor pins are upgraded; Feather uses a
+reviewable local Zip boundary-validation patch. All tracked Swift pins have
+zero OSV commit matches (`tools/scripts/audit-swift-dependencies.py`). All four
+locked npm graphs audit clean, including the documentation and both Cloudflare
+services. Unpatched Braces uses a bounded local source implementation; its
+clean audit result requires source review as well.
+
+**Do not suppress advisories.** GitHub's private inventory remains inaccessible.
+GitHub last reported 32 default-branch alerts after PR #15, down from 36;
+the independent candidate's zero findings are not a GitHub alert count.
+Recheck GitHub after merge. CI plus installed-device network, SSH, pairing,
+and signing acceptance remain release gates.
 
 ## P1 — incomplete user-visible behavior
 
