@@ -424,13 +424,9 @@ impl AppStoreReducer {
         {
             let mut snapshot = self.write_snapshot();
             snapshot.servers.remove(server_id);
-            snapshot.threads.retain(|key, _| {
-                let keep = key.server_id != server_id;
-                if !keep {
-                    removed_thread_keys.push(key.clone());
-                }
-                keep
-            });
+            // Removing a server connection must not erase local chat
+            // history. The server may be unavailable, but conversations remain
+            // readable and deletable by the user.
             if snapshot
                 .active_thread
                 .as_ref()
