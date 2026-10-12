@@ -364,7 +364,12 @@ ios_runtime_cargo() {
 
 if [ "$CHECK_DEVICE" -eq 1 ]; then
   echo "==> Checking the full iOS Rust dependency graph ($PROFILE)..."
-  ios_runtime_cargo aarch64-apple-ios check --locked --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target aarch64-apple-ios $CARGO_FEATURES
+  # sync-codex.sh updates the pinned mobile Codex source/patches immediately
+  # before this check. Those pinned patches may change the resolved graph from
+  # the committed lockfile; fail on actual compile errors instead of rejecting
+  # Cargo's necessary in-job lockfile reconciliation. Device rustc uses this
+  # same resolved workspace in the following step.
+  ios_runtime_cargo aarch64-apple-ios check --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target aarch64-apple-ios $CARGO_FEATURES
   exit 0
 fi
 
