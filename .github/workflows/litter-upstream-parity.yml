@@ -85,7 +85,6 @@ jobs:
               "shared/rust-bridge/codex-mobile-client/src/thread_modes.rs",
               "apps/ios/Sources/Litter/Views/StreamingAssistantRenderCache.swift",
               "apps/ios/Sources/Litter/Views/MessageRenderCache.swift",
-              "apps/ios/Sources/Litter/Models/StreamingRendererCoordinator.swift",
               "apps/ios/Sources/Litter/Views/HomeDashboardSupport.swift",
               "apps/ios/Sources/Litter/Views/SessionsDerivation.swift",
               "apps/ios/Sources/Litter/Models/AppThreadSnapshot+Runtime.swift",
@@ -187,6 +186,7 @@ jobs:
                   p.startswith("apps/ios/Sources/Litter/Views/Conversation")
                   or p.startswith("apps/ios/Sources/Litter/Views/Sessions")
                   or p.startswith("apps/ios/Sources/Litter/Models/AppModel")
+        or p.startswith("apps/ios/Sources/Litter/Models/StreamingRendererCoordinator")
                   or p.startswith("shared/rust-bridge/codex-mobile-client/src/ffi/")
                   or p.startswith("shared/rust-bridge/codex-mobile-client/src/mobile_client/")
                   or p.startswith("shared/rust-bridge/codex-mobile-client/src/store/")
