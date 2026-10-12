@@ -186,7 +186,7 @@ jobs:
                   p.startswith("apps/ios/Sources/Litter/Views/Conversation")
                   or p.startswith("apps/ios/Sources/Litter/Views/Sessions")
                   or p.startswith("apps/ios/Sources/Litter/Models/AppModel")
-        or p.startswith("apps/ios/Sources/Litter/Models/StreamingRendererCoordinator")
+                  or p.startswith("apps/ios/Sources/Litter/Models/StreamingRendererCoordinator")
                   or p.startswith("shared/rust-bridge/codex-mobile-client/src/ffi/")
                   or p.startswith("shared/rust-bridge/codex-mobile-client/src/mobile_client/")
                   or p.startswith("shared/rust-bridge/codex-mobile-client/src/store/")
