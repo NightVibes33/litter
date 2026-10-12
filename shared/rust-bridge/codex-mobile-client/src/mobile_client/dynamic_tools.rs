@@ -478,14 +478,14 @@ mod local_studio_tests {
     }
 
     #[test]
-    fn non_local_studio_tool_page_keeps_existing_reconcile_behavior() {
+    fn non_local_studio_tool_page_preserves_cached_threads_and_adds_page() {
         let store = AppStoreReducer::new();
         store.upsert_thread_snapshot(ThreadSnapshot::from_info("server", thread("older")));
 
         reconcile_list_sessions_page(&store, "server", &["codex".to_string()], &[thread("newer")]);
 
         let snapshot = store.snapshot();
-        assert_eq!(snapshot.threads.len(), 1);
+        assert_eq!(snapshot.threads.len(), 2);
         assert!(snapshot.threads.keys().any(|key| key.thread_id == "newer"));
     }
 }
