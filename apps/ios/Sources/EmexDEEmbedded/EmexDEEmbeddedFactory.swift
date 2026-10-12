@@ -121,6 +121,15 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
 
         let contentNavigationController = UINavigationController(rootViewController: contentViewController)
         let settingsNavigationController = UINavigationController(rootViewController: settingsViewController)
+        // Nyxian's own signing identity importer, not KittyStore or Feather.
+        // Free Personal Team users can import a SideStore.p12 here, provided
+        // the development identity matches the installed app's provision.
+        settingsViewController.navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: "Signing",
+            style: .plain,
+            target: self,
+            action: #selector(openNyxianCertificateImporter)
+        )
 
         contentNavigationController.tabBarItem = UITabBarItem(title: "Projects", image: UIImage(systemName: "square.grid.2x2.fill"), tag: 0)
         settingsNavigationController.tabBarItem = UITabBarItem(title: "Settings", image: UIImage(systemName: "gear"), tag: 1)
@@ -138,6 +147,17 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
         tabViewController.delegate = self
         installSingleChild(tabViewController)
         nyxianLaunchLog("Nyxian root mounted")
+    }
+
+    @objc private func openNyxianCertificateImporter() {
+        guard tabViewController.presentedViewController == nil else { return }
+        // Uses upstream LCUtils (LCCertificateData/LCCertificatePassword)
+        // and ZSigner to validate .p12 against the host provisioning profile.
+        // This is optional: editing/building does not require paid membership.
+        let importer = CertificateImporter(style: .insetGrouped)
+        let navigationController = UINavigationController(rootViewController: importer)
+        navigationController.modalPresentationStyle = .formSheet
+        tabViewController.present(navigationController, animated: true)
     }
 
     private func installSingleChild(_ child: UIViewController) {

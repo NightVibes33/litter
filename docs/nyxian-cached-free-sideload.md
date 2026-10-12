@@ -14,9 +14,9 @@ These samples are **not** currently hosted as GitHub Actions artifacts. The hash
 
 ## Free Apple Account path
 
-The embedded Nyxian onboarding no longer automatically calls `checkSigningSetup()` or demands a P12/certificate picker. Export/build actions remain available. Users may sign and install the unsigned Alley Cat IPA and exported user projects with their own Apple Account in KittyStore/SideStore where supported; a paid Developer Program membership is not required for ordinary sideloading.
+The embedded Nyxian onboarding no longer automatically forces the signing popup. Export/build actions remain available. **Nyxian only:** open **Nyxian → Settings → Signing** to access the upstream `CertificateImporter`. A free Apple ID user may select their `SideStore.p12` file, enter its password and tap **Import**. This stores the signing identity in Nyxian's original `LCUtils` storage (`LCCertificateData` / `LCCertificatePassword`) for `ZSigner` without redirecting users to KittyStore or Feather. Paid Apple Developer Program membership is not a requirement for a valid seven-day Apple *development* certificate.
 
-This does **not** bypass Apple provisioning restrictions. Personal Team signing normally has a seven-day profile, three active apps/device, and ten App IDs per seven days. It cannot create reserved entitlements, kernel privileges, or unsupported extensions; `LiveProcess.appex`, JIT, or ROM userspace may still need additional compatibility checks on an actual free-account-signed device.
+Nyxian reads the **installed host app's** `embedded.mobileprovision` for its native ZSigner checks. The imported P12 must correspond to a certificate authorized by that provisioning profile. `LiveProcess.appex` must also remain present with its development entitlements (`get-task-allow`); a mismatched P12/profile or stripped extension needs correcting at install/signing time. A Personal Team certificate is supported in principle, but standard seven-day expiry, app limits and restricted-entitlement limitations still apply. This change does **not** bypass iOS provisioning or grant additional privileges.
 
 ## Procursus ROM
 
@@ -28,5 +28,5 @@ The standalone Nyxian app has a volume-down recovery interaction. **Do not assum
 
 1. Cache-only runner either restores the verified complete toolchain or fails without a new compiler build.
 2. The resulting Alley Cat archive contains emexDE/Compiler/LiveProcess and the unchanged in-app ChatGPT bridge.
-3. On a free Apple Account, install/launch Alley Cat; exercise Nyxian create/build/export with no P12 prompt, then verify KittyStore signing separately.
+3. On a free Apple Account, install/launch Alley Cat; open **Nyxian → Settings → Signing**, select **SideStore.p12**, enter the password, and verify native Nyxian/ZSigner validation. Exercise create/build/export, then run/install on device only after the provisioning and extension preflight passes.
 4. On a physical device, independently verify the ROM recovery UI, volume button detection, ROM import, and any extension/runtime privileges.
