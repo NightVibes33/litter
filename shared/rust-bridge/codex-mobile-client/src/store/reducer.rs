@@ -4464,7 +4464,7 @@ mod tests {
     }
 
     #[test]
-    fn sync_thread_list_evicts_old_inactive_thread_not_in_incoming_page() {
+    fn sync_thread_list_preserves_old_inactive_thread_not_in_incoming_page() {
         let reducer = AppStoreReducer::new();
         let stale_key = ThreadKey {
             server_id: "srv".to_string(),
@@ -4477,7 +4477,7 @@ mod tests {
         reducer.sync_thread_list("srv", &[make_thread_info("other")]);
 
         let snapshot = reducer.snapshot();
-        assert!(!snapshot.threads.contains_key(&stale_key));
+        assert!(snapshot.threads.contains_key(&stale_key));
         assert!(snapshot.threads.contains_key(&ThreadKey {
             server_id: "srv".to_string(),
             thread_id: "other".to_string(),
