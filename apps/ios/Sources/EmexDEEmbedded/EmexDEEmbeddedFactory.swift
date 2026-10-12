@@ -32,7 +32,6 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
     private let tabViewController = NXUITabBarController()
     private var installedRoot = false
     private var presentedOnboarding = false
-    private var checkedSigningSetup = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -48,11 +47,9 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
         nyxianLaunchLog("viewDidAppear: native startup begin")
         installUpstreamRootIfNeeded()
         presentOnboardingIfNeeded()
-        // Never open a P12 Files picker in the same layout transaction as
-        // an embedded custom-window controller being mounted.
-        DispatchQueue.main.async { [weak self] in
-            self?.checkSigningAfterOnboardingIfNeeded()
-        }
+        // Building and exporting projects must not require a paid Apple
+        // Developer account or trigger a certificate/P12 picker. KittyStore
+        // handles free-Apple-Account signing when installation is requested.
     }
 
     private func installUpstreamRootIfNeeded() {
@@ -178,16 +175,6 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
         tabViewController.present(onboardingController, animated: false)
     }
 
-    private func checkSigningAfterOnboardingIfNeeded() {
-        guard !checkedSigningSetup,
-              installedRoot,
-              tabViewController.parent != nil,
-              UserDefaults.standard.object(forKey: "NXOnboardingSentinel") != nil,
-              tabViewController.presentedViewController == nil else { return }
-        checkedSigningSetup = true
-        checkSigningSetup()
-    }
-
     private func makeEmbeddedOnboardingConfiguration() -> UIOnboardingViewConfiguration {
         let frameworkBundle = Bundle(for: EmexDEEmbeddedFactory.self)
         let appIcon = UIImage(
@@ -245,9 +232,7 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
 
     func didFinishOnboarding(onboardingViewController: UIOnboardingViewController) {
         onboardingViewController.modalTransitionStyle = .crossDissolve
-        onboardingViewController.dismiss(animated: true) { [weak self] in
-            self?.checkSigningAfterOnboardingIfNeeded()
-        }
+        onboardingViewController.dismiss(animated: true)
         UserDefaults.standard.set(NSNumber(booleanLiteral: true), forKey: "NXOnboardingSentinel")
     }
 }

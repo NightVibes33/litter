@@ -16,6 +16,7 @@ on:
         type: choice
         options:
           - full-sideload
+          - cached-full-sideload
           - fast-device
           - release-device
           - nyxian-private
@@ -78,8 +79,12 @@ jobs:
     uses: ./.github/workflows/ios-code-mode-runtime.yml
 
   nyxian-toolchain:
-    if: github.event_name != 'workflow_dispatch' || inputs.build_mode == 'full-sideload' || inputs.build_mode == 'nyxian-private'
+    if: github.event_name != 'workflow_dispatch' || inputs.build_mode == 'full-sideload' || inputs.build_mode == 'cached-full-sideload' || inputs.build_mode == 'nyxian-private'
     uses: ./.github/workflows/nyxian-toolchain.yml
+    with:
+      # Use the pinned, provenance-verified compiler cache for this lane;
+      # never rebuild LLVM/Swift if the explicitly requested cache is absent.
+      cache_only: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'cached-full-sideload' }}
 
   build-unsigned-ipa:
     needs: [nyxian-toolchain, ios-code-mode-runtime]
@@ -106,9 +111,9 @@ jobs:
       # Push builds produce the full sideload app with KittyStore and emexDE.
       # Only the manual nyxian-private lane embeds the private SDK/toolchain asset zip.
       LITTER_IOS_BUILD_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'full-sideload' }}
-      LITTER_NYXIAN_PRIVATE_BUILD: ${{ (github.event_name != 'workflow_dispatch' || inputs.build_mode == 'full-sideload' || inputs.build_mode == 'nyxian-private') && '1' || '0' }}
+      LITTER_NYXIAN_PRIVATE_BUILD: ${{ (github.event_name != 'workflow_dispatch' || inputs.build_mode == 'full-sideload' || inputs.build_mode == 'cached-full-sideload' || inputs.build_mode == 'nyxian-private') && '1' || '0' }}
       LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
-      LITTER_PRESERVE_NYXIAN_LIVEPROCESS: ${{ (github.event_name != 'workflow_dispatch' || inputs.build_mode == 'full-sideload' || inputs.build_mode == 'nyxian-private') && '1' || '0' }}
+      LITTER_PRESERVE_NYXIAN_LIVEPROCESS: ${{ (github.event_name != 'workflow_dispatch' || inputs.build_mode == 'full-sideload' || inputs.build_mode == 'cached-full-sideload' || inputs.build_mode == 'nyxian-private') && '1' || '0' }}
       LITTER_SKIP_ALLEYCAT_UPDATE: "1"
       LITTER_USE_MATCHED_NYXIAN_TOOLCHAIN: "1"
 
@@ -405,7 +410,7 @@ jobs:
         run: |
           set -euo pipefail
           BUILD_MODE="$LITTER_IOS_BUILD_MODE"
-          if [ "$BUILD_MODE" != "fast-device" ] && [ "$BUILD_MODE" != "full-sideload" ] && [ "$BUILD_MODE" != "nyxian-private" ]; then
+          if [ "$BUILD_MODE" != "fast-device" ] && [ "$BUILD_MODE" != "full-sideload" ] && [ "$BUILD_MODE" != "cached-full-sideload" ] && [ "$BUILD_MODE" != "nyxian-private" ]; then
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "Release-device mode intentionally rebuilds Rust."
             exit 0
@@ -482,7 +487,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$LITTER_IOS_BUILD_MODE" in
-            fast-device|full-sideload|nyxian-private)
+            fast-device|full-sideload|cached-full-sideload|nyxian-private)
               ./apps/ios/scripts/build-rust.sh --preserve-current --fast-device --check-device
               ;;
             *)
@@ -496,7 +501,7 @@ jobs:
           set -euo pipefail
           BUILD_MODE="$LITTER_IOS_BUILD_MODE"
           echo "Using build mode: $BUILD_MODE"
-          if [ "$BUILD_MODE" = "fast-device" ] || [ "$BUILD_MODE" = "full-sideload" ] || [ "$BUILD_MODE" = "nyxian-private" ]; then
+          if [ "$BUILD_MODE" = "fast-device" ] || [ "$BUILD_MODE" = "full-sideload" ] || [ "$BUILD_MODE" = "cached-full-sideload" ] || [ "$BUILD_MODE" = "nyxian-private" ]; then
             if [ -f apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h ] && [ -f apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift ]; then
               time ./apps/ios/scripts/build-rust.sh --preserve-current --fast-device --skip-bindings
             else
@@ -842,7 +847,7 @@ jobs:
             CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"
             'OTHER_SWIFT_FLAGS=$(inherited) -DALLEY_CAT_SIDELOAD_UNLOCKED'
           )
-          if [ "$LITTER_IOS_BUILD_MODE" = "fast-device" ] || [ "$LITTER_IOS_BUILD_MODE" = "full-sideload" ]; then
+          if [ "$LITTER_IOS_BUILD_MODE" = "fast-device" ] || [ "$LITTER_IOS_BUILD_MODE" = "full-sideload" ] || [ "$LITTER_IOS_BUILD_MODE" = "cached-full-sideload" ]; then
             archive_cmd+=(
               ARCHS=arm64
               ONLY_ACTIVE_ARCH=NO

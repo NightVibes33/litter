@@ -2,6 +2,12 @@ name: Build pinned Nyxian compiler toolchain
 
 on:
   workflow_call:
+    inputs:
+      cache_only:
+        description: "Require restored pinned compiler artifacts; never compile on a miss"
+        type: boolean
+        required: false
+        default: false
   workflow_dispatch:
     inputs:
       cache_only:

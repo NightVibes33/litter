@@ -294,7 +294,7 @@ struct BuildKitSettingsView: View {
 
     private var signingSection: some View {
         Section {
-            Text("Apple ID sign-in, 2FA, pairing, and LocalDevVPN stay inside KittyStore. Settings > Signing owns Feather certificate import, provisioning profiles, and certificate-only IPA signing options. BuildKit only reports whether native runner inputs are ready.")
+            Text("Free Apple Accounts can sign ordinary IPAs through KittyStore/SideStore without a paid Developer Program membership or manually imported P12. Use KittyStore for Apple Account login, 2FA, pairing, LocalDevVPN, and installs. Nyxian can create and export projects without signing. Restricted entitlements and privileged extensions may remain unavailable.")
                 .litterFont(.caption)
                 .foregroundStyle(LitterTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -306,7 +306,7 @@ struct BuildKitSettingsView: View {
             statusRow("Apple ID detail", status?.appleIDDetail ?? "Missing")
             statusRow("Imported certificate", status?.nyxianSigningCertificateInstalled == true ? "Validated" : "Missing or invalid")
             statusRow("Certificate detail", status?.nyxianSigningCertificateDetail ?? "Missing")
-            statusRow("Run/install signing", status?.canRunNyxianApps == true ? "Ready" : "Blocked")
+            statusRow("Run/install signing", status?.canRunNyxianApps == true ? "Ready" : "Set up KittyStore")
             statusRow("LocalDevVPN", status?.localDevVPNConnected == true ? "Detected" : "Not detected")
             statusRow("VPN detail", status?.localDevVPNDetail ?? "No active VPN tunnel interface detected")
             statusRow("Full install/refresh", status?.canInstallOrRefreshOnDevice == true ? "Ready" : "Blocked")
