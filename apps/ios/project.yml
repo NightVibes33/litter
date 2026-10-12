@@ -415,6 +415,10 @@ targets:
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationWorkspace.m
         headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/UI/NXVolumeButtonMonitor.h
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/UI/NXVolumeButtonMonitor.m
+        headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian
         headerVisibility: project
         excludes:
