@@ -403,7 +403,7 @@ require_absent "BuildKit SideStore account UI scatter" "Import SideStore Account
 require_absent "BuildKit Apple ID login UI scatter" "Login Apple ID" "apps/ios/Sources/Litter/Views/BuildKitSettingsView.swift"
 require_absent "BuildKit certificate import UI scatter" "Import SideStore Certificate" "apps/ios/Sources/Litter/Views/BuildKitSettingsView.swift"
 require_absent "BuildKit certificate handler scatter" "handleCertificateImport" "apps/ios/Sources/Litter/Views/BuildKitSettingsView.swift"
-require_grep "BuildKit keeps KittyStore login embedded" "Apple ID sign-in, 2FA, pairing, and LocalDevVPN stay inside KittyStore" "apps/ios/Sources/Litter/Views/BuildKitSettingsView.swift"
+require_grep "BuildKit keeps KittyStore account transport in its own UI" "Use KittyStore for Apple Account login, 2FA, pairing, LocalDevVPN, and installs." "apps/ios/Sources/Litter/Views/BuildKitSettingsView.swift"
 require_absent "BuildKit SideStore account handler scatter" "handleSideStoreAccountImport" "apps/ios/Sources/Litter/Views/BuildKitSettingsView.swift"
 require_absent "BuildKit Apple ID handler scatter" "saveNyxianAppleID" "apps/ios/Sources/Litter/Views/BuildKitSettingsView.swift"
 require_grep "BuildKit binary pairing plist normalization" "normalizedPairingFileContents" "apps/ios/Sources/Litter/Models/LitterBuildKit.swift"
