@@ -178,6 +178,16 @@ struct ConversationComposerTextView: UIViewRepresentable {
         let width = proposal.width ?? uiView.bounds.width
         guard width > 0 else { return nil }
 
+        // Keep the focused composer height stable. Measuring the full text view
+        // on every keystroke propagates through the safe-area composer and
+        // re-places the conversation LazyVStack, which can trip the iOS 27
+        // scene-update watchdog on long or live transcripts. TextKit scrolls
+        // internally while editing; the expand affordance remains available.
+        if uiView.isFirstResponder {
+            let minimum = context.coordinator.minimumHeight(for: uiView)
+            return CGSize(width: width, height: max(uiView.bounds.height, minimum))
+        }
+
         let fittingSize = uiView.sizeThatFits(
             CGSize(width: width, height: .greatestFiniteMagnitude)
         )
