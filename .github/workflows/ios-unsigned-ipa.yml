@@ -748,7 +748,21 @@ jobs:
         run: |
           set -euo pipefail
           brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
-          time make xcgen
+          # Rust device builds and Swift bindings are prepared in earlier steps.
+          # Do not invoke "make xcgen" here: its bindings-swift dependency
+          # rebuilds the host Codex cdylib, which exhausted the 360-minute
+          # runner limit after the iOS static library had already been cached.
+          for required in \
+            apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift \
+            apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h \
+            apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.modulemap \
+            apps/ios/Resources/fs.tar.gz; do
+            if [ ! -s "$required" ]; then
+              echo "::error::Missing generated Xcode input: $required" >&2
+              exit 1
+            fi
+          done
+          time apps/ios/scripts/regenerate-project.sh
 
       - name: Reset SwiftPM binary artifact cache
         run: |
