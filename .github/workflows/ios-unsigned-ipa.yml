@@ -148,6 +148,11 @@ jobs:
           set -euo pipefail
           tools/scripts/verify-nyxian-source-import.sh
 
+      - name: Patch Nyxian Objective-C imports for Xcode
+        run: |
+          set -euo pipefail
+          python3 tools/scripts/patch-nyxian-objc-ci-imports.py
+
       - name: Resolve emexDE Swift revision
         if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
         id: emexde_swift_revision

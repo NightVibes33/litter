@@ -1,0 +1,65 @@
+diff --git a/codex-rs/otel/src/provider.rs b/codex-rs/otel/src/provider.rs
+--- a/codex-rs/otel/src/provider.rs
++++ b/codex-rs/otel/src/provider.rs
+@@ -508,10 +508,6 @@
+-                    OTEL_EXPORTER_OTLP_LOGS_TIMEOUT,
+-                )?;
+-                exporter_builder = exporter_builder.with_http_client(client);
+-            } else if let Some(tls) = tls.as_ref() {
+-                let client = crate::otlp::build_http_client(tls, OTEL_EXPORTER_OTLP_LOGS_TIMEOUT)?;
+-                exporter_builder = exporter_builder.with_http_client(client);
+-            }
+-
+-            let exporter = exporter_builder.build()?;
+-
++                    OTEL_EXPORTER_OTLP_LOGS_TIMEOUT,
++                )?;
++                exporter_builder = exporter_builder.with_http_client(client);
++
++            let exporter = exporter_builder.build()?;
++
+diff --git a/codex-rs/otel/src/provider.rs b/codex-rs/otel/src/provider.rs
+--- a/codex-rs/otel/src/provider.rs
++++ b/codex-rs/otel/src/provider.rs
+@@ -618,11 +618,6 @@
+-                    OTEL_EXPORTER_OTLP_TRACES_TIMEOUT,
+-                )?;
+-                exporter_builder = exporter_builder.with_http_client(client);
+-            } else if let Some(tls) = tls.as_ref() {
+-                let client =
+-                    crate::otlp::build_http_client(tls, OTEL_EXPORTER_OTLP_TRACES_TIMEOUT)?;
+-                exporter_builder = exporter_builder.with_http_client(client);
+-            }
+-
+-            exporter_builder.build()?
+-        }
++                    OTEL_EXPORTER_OTLP_TRACES_TIMEOUT,
++                )?;
++                exporter_builder = exporter_builder.with_http_client(client);
++
++            exporter_builder.build()?
++        }
+diff --git a/codex-rs/otel/src/metrics/client.rs b/codex-rs/otel/src/metrics/client.rs
+--- a/codex-rs/otel/src/metrics/client.rs
++++ b/codex-rs/otel/src/metrics/client.rs
+@@ -661,14 +661,6 @@
+-                    message: err.to_string(),
+-                })?;
+-                exporter_builder = exporter_builder.with_http_client(client);
+-            } else if let Some(tls) = tls.as_ref() {
+-                let client =
+-                    crate::otlp::build_http_client(tls, OTEL_EXPORTER_OTLP_METRICS_TIMEOUT)
+-                        .map_err(|err| MetricsError::InvalidConfig {
+-                            message: err.to_string(),
+-                        })?;
+-                exporter_builder = exporter_builder.with_http_client(client);
+-            }
+-
+-            exporter_builder
+-                .build()
++                    message: err.to_string(),
++                })?;
++                exporter_builder = exporter_builder.with_http_client(client);
++
++            exporter_builder
++                .build()

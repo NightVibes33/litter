@@ -9,6 +9,7 @@ PATCH_FILES=(
     "$REPO_DIR/patches/codex/mobile-in-process-code-mode.patch"
     "$REPO_DIR/patches/codex/mobile-crypto-compat.patch"
     "$REPO_DIR/patches/codex/mobile-security-dependencies.patch"
+    "$REPO_DIR/patches/codex/otel-no-blocking-http-client.patch"
     "$REPO_DIR/patches/codex/ios-exec-hook.patch"
     "$REPO_DIR/patches/codex/thread-read-permissions.patch"
     "$REPO_DIR/patches/codex/thread-list-fork-lineage.patch"
