@@ -267,3 +267,20 @@ if workspace.exists():
     if before not in text and after + "\n#define LIVEPROCESS 0" not in text:
         raise SystemExit("Missing expected LDEApplicationWorkspace host selection")
     workspace.write_text(text.replace(before, after))
+
+# Xcode places the generated Swift compatibility header inside the embedded
+# emexDE.framework/Headers directory. A quoted header import searches the
+# source directory, not the framework's generated public headers. Use a
+# framework-qualified import for the remaining Nyxian Objective-C consumers;
+# files needing CI-only shims have already been rewritten above.
+framework_import = '#import <emexDE/Nyxian-Swift.h>'
+local_import = '#import "Nyxian-Swift.h"'
+framework_imports = []
+for source in Path("ThirdParty/EmexDE/Source/Nyxian").rglob("*"):
+    if source.suffix not in {".h", ".m", ".mm"}:
+        continue
+    text = source.read_text(errors="ignore")
+    if local_import in text:
+        source.write_text(text.replace(local_import, framework_import))
+        framework_imports.append(str(source))
+print(f"Repointed {len(framework_imports)} embedded Nyxian Objective-C Swift header imports to emexDE.framework.")
