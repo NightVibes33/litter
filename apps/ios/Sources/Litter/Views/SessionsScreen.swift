@@ -762,10 +762,10 @@ struct SessionsScreen: View {
         appState.currentCwd = thread.cwd
         let resumeKey = await appModel.hydrateThreadPermissions(for: thread.key, appState: appState)
             ?? thread.key
+        appModel.activateThread(resumeKey)
+        onOpenConversation(resumeKey)
+
         do {
-            // Verify the server-side thread before navigating. Previously we
-            // opened a stale local ID first, leaving ConversationView pointing
-            // at a nonexistent thread when thread/resume returned -32600.
             let nextKey = try await appModel.resumeThread(
                 key: resumeKey,
                 launchConfig: launchConfig(for: resumeKey),
@@ -774,14 +774,12 @@ struct SessionsScreen: View {
             if !thread.cwd.isEmpty {
                 RecentDirectoryStore.shared.record(path: thread.cwd, for: thread.key.serverId)
             }
-            appModel.activateThread(nextKey)
-            onOpenConversation(nextKey)
-        } catch {
-            if AppModel.isMissingThreadError(error) {
-                sessionActionErrorMessage = "This conversation is preserved on this device, but the connected server no longer has the live thread. Reconnect the server or start a new conversation to continue."
-            } else {
-                sessionActionErrorMessage = error.localizedDescription
+            if nextKey != resumeKey {
+                appModel.activateThread(nextKey)
+                onOpenConversation(nextKey)
             }
+        } catch {
+            sessionActionErrorMessage = error.localizedDescription
         }
     }
 

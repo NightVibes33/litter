@@ -1,0 +1,93 @@
+diff --git a/codex-rs/state/src/runtime.rs b/codex-rs/state/src/runtime.rs
+index 14fcd2d..5fad36a 100644
+--- a/codex-rs/state/src/runtime.rs
++++ b/codex-rs/state/src/runtime.rs
+@@ -147,6 +147,11 @@ impl StateRuntime {
+                 return Err(err);
+             }
+         };
++        if let Err(err) =
++            threads::repair_stale_ios_rollout_paths(pool.as_ref(), sqlite.home()).await
++        {
++            warn!("failed to rebase stale iOS thread rollout paths: {err}");
++        }
+         let logs_pool = match sqlite
+             .open_logs_db(&logs_migrator, telemetry_override)
+             .await
+diff --git a/codex-rs/state/src/runtime/threads.rs b/codex-rs/state/src/runtime/threads.rs
+index fe64fb6..db482a9 100644
+--- a/codex-rs/state/src/runtime/threads.rs
++++ b/codex-rs/state/src/runtime/threads.rs
+@@ -5,6 +5,72 @@ use codex_protocol::protocol::SessionSource;
+ use std::sync::atomic::AtomicI64;
+ use std::sync::atomic::Ordering;
+ 
++/// Rebase rollout paths left behind by an iOS application-container move.
++///
++/// iOS can assign the app a new container UUID while preserving CODEX_HOME's
++/// contents. The state database then contains absolute paths into the old
++/// container even though the corresponding file is present under the current
++/// CODEX_HOME. Only rewrite a missing path when the matching file exists under
++/// the current home, so unrelated or genuinely missing rollouts are untouched.
++pub(crate) async fn repair_stale_ios_rollout_paths(
++    pool: &SqlitePool,
++    codex_home: &Path,
++) -> anyhow::Result<u64> {
++    const IOS_CODEX_HOME_MARKER: &str = "/Library/Application Support/codex/";
++
++    let rows = sqlx::query(
++        "SELECT id, rollout_path FROM threads WHERE instr(rollout_path, ?) > 0",
++    )
++    .bind(IOS_CODEX_HOME_MARKER)
++    .fetch_all(pool)
++    .await?;
++
++    let mut repaired = 0;
++    for row in rows {
++        let id: String = row.try_get("id")?;
++        let old_path_string: String = row.try_get("rollout_path")?;
++        let old_path = PathBuf::from(&old_path_string);
++        if tokio::fs::try_exists(&old_path).await? {
++            continue;
++        }
++
++        let Some(relative_path) = old_path
++            .to_str()
++            .and_then(|path| path.rsplit_once(IOS_CODEX_HOME_MARKER))
++            .map(|(_, relative)| Path::new(relative))
++            .filter(|relative| {
++                !relative.as_os_str().is_empty()
++                    && !relative.is_absolute()
++                    && !relative
++                        .components()
++                        .any(|component| matches!(component, std::path::Component::ParentDir))
++            })
++        else {
++            continue;
++        };
++
++        let new_path = codex_home.join(relative_path);
++        if !tokio::fs::try_exists(&new_path).await? {
++            continue;
++        }
++
++        let result = sqlx::query(
++            "UPDATE threads SET rollout_path = ? WHERE id = ? AND rollout_path = ?",
++        )
++        .bind(new_path.display().to_string())
++        .bind(id)
++        .bind(old_path_string)
++        .execute(pool)
++        .await?;
++        repaired += result.rows_affected();
++    }
++
++    if repaired > 0 {
++        tracing::info!(repaired = repaired, "rebased stale iOS thread rollout paths");
++    }
++    Ok(repaired)
++}
++
+ impl StateRuntime {
+     pub async fn get_thread(&self, id: ThreadId) -> anyhow::Result<Option<crate::ThreadMetadata>> {
+         let row = sqlx::query(

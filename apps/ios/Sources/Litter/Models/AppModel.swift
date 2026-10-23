@@ -362,23 +362,6 @@ final class AppModel {
         }
     }
 
-    /// An authoritative backend response for a session that no longer exists.
-    /// Keep this separate from connection/authentication errors so we never
-    /// discard conversations when a server is merely offline.
-    static func isMissingThreadError(_ error: Error) -> Bool {
-        let description = "\(error.localizedDescription) \(String(describing: error))"
-        let value = description.lowercased()
-        return value.contains("thread not found")
-            || value.contains("thread cannot be found")
-            || value.contains("no thread found")
-            || value.contains("no rollout found for thread id")
-            || value.contains("conversation no longer exists")
-            || value.contains("conversation not found")
-            || value.contains("conversation does not exist")
-            || value.contains("unknown thread")
-            || value.contains("was not found in any registered runtime")
-    }
-
     func activateThread(_ key: ThreadKey?) {
         restoreCachedThreadSnapshotIfNeeded(for: key)
         updateActiveThread(key)

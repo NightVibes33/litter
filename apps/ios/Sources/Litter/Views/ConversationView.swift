@@ -246,9 +246,7 @@ struct ConversationView: View {
                     activeThreadKey.threadId,
                     error.localizedDescription
                 )
-                messageActionError = AppModel.isMissingThreadError(error)
-                    ? "This conversation is preserved on this device, but the connected server no longer has the live thread. Reconnect the server or start a new conversation to continue."
-                    : error.localizedDescription
+                messageActionError = error.localizedDescription
             }
         }
     }

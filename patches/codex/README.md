@@ -38,6 +38,12 @@ Validated patch base: `rust-v0.155.1` (`be2951ea`). The former mobile code-mode 
 ## `mobile-crypto-compat.patch`
 Pins clatter 3.0 to upstream commit `9a8d15c4f80d5911ca0403aa22e0de99ea59df08`. This moves its ML-KEM implementation to the stable KEM API shared by the mobile SSH dependency; clatter 2.x requires an incompatible prerelease of the same KEM package.
 
+## `ios-rollout-path-rebase.patch`
+
+Repairs saved Codex threads after iOS assigns the app a new container UUID. On state database startup, it finds rollout paths under the old `Library/Application Support/codex` container, then updates a path only when the old file is missing and the matching file exists under the current CODEX_HOME. This lets old threads resume after container relocation without hiding genuinely missing or corrupt rollouts.
+
+Touches `codex-rs/state/src/runtime.rs` and `codex-rs/state/src/runtime/threads.rs`.
+
 ## `thread-read-permissions.patch`
 Adds `approval_policy` and `sandbox` to `ThreadReadResponse` so mobile clients can render the live permission state of a thread without doing a separate config fetch.
 

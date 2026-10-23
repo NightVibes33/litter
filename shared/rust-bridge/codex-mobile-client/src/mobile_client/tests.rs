@@ -1435,8 +1435,10 @@ mod mobile_client_tests {
             .upsert_server(&config, ServerHealthSnapshot::Connected);
 
         let requests = Arc::new(StdMutex::new(Vec::<String>::new()));
+        let turn_start_attempts = Arc::new(StdMutex::new(0usize));
         let request_handler: TestRequestHandler = {
             let requests = Arc::clone(&requests);
+            let turn_start_attempts = Arc::clone(&turn_start_attempts);
             Arc::new(move |request| {
                 requests
                     .lock()
@@ -1475,10 +1477,22 @@ mod mobile_client_tests {
                         }))
                         .map_err(|error| RpcError::Deserialization(error.to_string()))
                     }
-                    upstream::ClientRequest::TurnStart { .. } => Ok(json!({
-                        "turn": {"id":"turn-next", "items":[], "status":"inProgress",
-                        "error":null, "startedAt":null, "completedAt":null, "durationMs":null}
-                    })),
+                    upstream::ClientRequest::TurnStart { .. } => {
+                        let mut attempts = turn_start_attempts
+                            .lock()
+                            .expect("turn-start attempt lock should not be poisoned");
+                        *attempts += 1;
+                        if *attempts == 1 {
+                            Err(RpcError::Deserialization(
+                                "server error -32600: thread not found: thread-1".to_string(),
+                            ))
+                        } else {
+                            Ok(json!({
+                                "turn": {"id":"turn-next", "items":[], "status":"inProgress",
+                                "error":null, "startedAt":null, "completedAt":null, "durationMs":null}
+                            }))
+                        }
+                    }
                     other => Err(RpcError::Deserialization(format!(
                         "unexpected request in test: {}",
                         other.method_name()
@@ -1506,27 +1520,45 @@ mod mobile_client_tests {
             .external_resume_thread(server_id, thread_id, None)
             .await
             .expect("second resume should be skipped");
-
-        let key = ThreadKey { server_id: server_id.to_string(), thread_id: thread_id.to_string() };
-        client.event_processor.process_notification(server_id, "codex".to_string(),
-            &upstream::ServerNotification::ThreadClosed(upstream::ThreadClosedNotification {
-                thread_id: thread_id.to_string(),
-            }));
+        let key = ThreadKey {
+            server_id: server_id.to_string(),
+            thread_id: thread_id.to_string(),
+        };
+        client.event_processor.process_notification(
+            server_id,
+            "codex".to_string(),
+            &upstream::ServerNotification::ThreadClosed(
+                upstream::ThreadClosedNotification {
+                    thread_id: thread_id.to_string(),
+                },
+            ),
+        );
         tokio::time::timeout(std::time::Duration::from_secs(2), async {
-            while client.app_store.thread_snapshot(&key).unwrap().is_resumed {
+            loop {
+                if client
+                    .app_store
+                    .thread_snapshot(&key)
+                    .is_some_and(|thread| !thread.is_resumed)
+                {
+                    break;
+                }
                 tokio::task::yield_now().await;
             }
-        }).await.expect("server close must invalidate subscription");
-        client.start_turn(server_id, interrupt_test_params(thread_id, "after idle"))
-            .await.expect("send must resume unloaded thread first");
+        })
+        .await
+        .expect("server close must invalidate subscription");
+        client
+            .start_turn(server_id, interrupt_test_params(thread_id, "after idle"))
+            .await
+            .expect("send must resume and retry after an unloaded thread response");
 
         let requests = requests
             .lock()
             .expect("request log lock should not be poisoned");
         assert_eq!(
             requests.as_slice(),
-            ["thread/resume", "thread/resume", "turn/start"],
-            "reuse live subscription, then resume after close before sending"
+            ["thread/resume", "thread/resume", "turn/start", "thread/resume", "turn/start"],
+            "resume known unload and retry once after definitive thread-not-found"
         );
     }
 
