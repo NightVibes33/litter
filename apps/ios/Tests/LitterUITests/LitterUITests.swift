@@ -65,6 +65,49 @@ final class LitterUITests: XCTestCase {
     }
 
     @MainActor
+    func testKeyboardPresentationWithShortTranscript() throws {
+        try assertKeyboardPresentationRemainsResponsive(longTranscript: false)
+    }
+
+    @MainActor
+    func testKeyboardPresentationWithLongTranscript() throws {
+        try assertKeyboardPresentationRemainsResponsive(longTranscript: true)
+    }
+
+    @MainActor
+    private func assertKeyboardPresentationRemainsResponsive(longTranscript: Bool) throws {
+        let app = conversationDisplayHarnessApp()
+        app.launchArguments += ["--ui-test-multiturn", "--ui-test-keyboard", "-collapseTurns", "NO"]
+        if longTranscript { app.launchArguments.append("--ui-test-long-turn") }
+        app.launch()
+
+        let lastMessage = longTranscript ? "HISTORY_MESSAGE_499" : "HISTORY_MESSAGE_2"
+        XCTAssertTrue(app.staticTexts[lastMessage].waitForExistence(timeout: 15))
+        let composer = app.textViews["conversation.composerTextView"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        var expected = ""
+        for cycle in 1...3 {
+            composer.tap()
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+            let addition = "Keyboard cycle \(cycle). "
+            composer.typeText(addition)
+            expected += addition
+            XCTAssertEqual(composer.value as? String, expected)
+            app.buttons["multiturn.dismissKeyboard"].tap()
+            XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+        }
+
+        // A responsive tap after resizing catches the layout/watchdog stall;
+        // the older composer-only harness never mounted the shipping list.
+        app.buttons["multiturn.followup"].tap()
+        XCTAssertTrue(app.staticTexts["FOLLOWUP_ANSWER_1"].waitForExistence(timeout: 5))
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        XCTAssertEqual(composer.value as? String, expected)
+    }
+
+    @MainActor
     func testRichTranscriptStaysInsideReadingColumn() throws {
         let app = conversationDisplayHarnessApp(reasoning: "expanded", commands: "expanded", tools: "expanded")
         app.launchArguments += ["--ui-test-multiturn", "--ui-test-rich"]

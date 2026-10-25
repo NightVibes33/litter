@@ -206,6 +206,8 @@ private struct ConversationMultiTurnUITestHarnessView: View {
     @State private var status: ConversationStatus = .ready
     @State private var revision = 0
     @State private var textSize = 0
+    @State private var keyboardDraft = ""
+    @State private var keyboardFocused = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -243,6 +245,19 @@ private struct ConversationMultiTurnUITestHarnessView: View {
                 onLoadOlderTurns: { _ in false }
             )
             .clipped()
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if ProcessInfo.processInfo.arguments.contains("--ui-test-keyboard") {
+                    VStack(spacing: 4) {
+                        Button("Dismiss keyboard") { keyboardFocused = false }
+                            .accessibilityIdentifier("multiturn.dismissKeyboard")
+                        ConversationComposerTextView(
+                            text: $keyboardDraft,
+                            isFocused: $keyboardFocused,
+                            onPasteImage: { _ in }
+                        )
+                    }
+                }
+            }
         }
         // The app's debug harness host fills the safe area; keep controls clear
         // of the status bar so XCTest exercises an actual user tap.

@@ -585,11 +585,6 @@ struct RateLimitBadgeView: View, Equatable {
 }
 
 
-private struct ConversationScrollLayout: Equatable {
-    let contentHeight: CGFloat
-    let viewportHeight: CGFloat
-}
-
 struct ConversationMessageList: View, Equatable {
     /// The draft belongs to the composer, not the transcript. When SwiftUI
     /// evaluates ConversationView for each keystroke, don't recursively diff
@@ -630,7 +625,6 @@ struct ConversationMessageList: View, Equatable {
     @State private var isNearBottom = true
     @State private var isFollowingBottom = true
     @State private var scrollPosition = ScrollPosition()
-    @State private var transcriptFitsViewport = true
     @State private var showScrollToBottomButton = false
     @State private var waitingForDataExpired = false
     @State private var pinchBaseStep: Int?
@@ -758,7 +752,6 @@ struct ConversationMessageList: View, Equatable {
                     // the bottom scroll anchor would then center it and push
                     // the whole transcript off-screen to the left.
                     .frame(width: viewport.size.width, alignment: .top)
-                    .frame(minHeight: viewport.size.height, alignment: .top)
                 }
                 .id(activeThreadScopeID)
                 .scrollIndicators(.hidden)
@@ -774,20 +767,15 @@ struct ConversationMessageList: View, Equatable {
                 } action: { _, distance in
                     updateDistanceFromBottom(distance)
                 }
-                .onScrollGeometryChange(for: ConversationScrollLayout.self) { geometry in
-                    ConversationScrollLayout(
-                        contentHeight: geometry.contentSize.height,
-                        viewportHeight: geometry.containerSize.height
-                    )
-                } action: { oldLayout, newLayout in
-                    // Keyboard/composer resizing can hide the last message even
-                    // when the transcript's content height does not change.
-                    transcriptFitsViewport = newLayout.contentHeight <= newLayout.viewportHeight + 1
-                    guard newLayout != oldLayout, isFollowingBottom else { return }
-                    followBottom()
-                }
+                // Let ScrollView preserve its bottom anchor during keyboard,
+                // composer and lazy-content size changes. Calling scrollTo
+                // from a geometry callback commits another scroll mutation
+                // while SwiftUI is flushing the current layout transaction;
+                // estimated LazyVStack heights can keep that cycle running
+                // until the scene-update watchdog kills the app.
                 .defaultScrollAnchor(.bottom, for: .initialOffset)
                 .defaultScrollAnchor(.top, for: .alignment)
+                .defaultScrollAnchor(isFollowingBottom ? .bottom : nil, for: .sizeChanges)
                 .scrollPosition($scrollPosition)
                 .simultaneousGesture(
                     MagnificationGesture(minimumScaleDelta: 0.03)
@@ -810,7 +798,6 @@ struct ConversationMessageList: View, Equatable {
                 }
                 .onChange(of: activeThreadKey) {
                     scrollPosition = ScrollPosition()
-                    transcriptFitsViewport = true
                     isFollowingBottom = true
                     isNearBottom = true
                     showScrollToBottomButton = false
@@ -1000,11 +987,10 @@ struct ConversationMessageList: View, Equatable {
         // update makes scrolling chase an ever-moving destination.
         var transaction = Transaction(animation: nil)
         transaction.disablesAnimations = true
-        // A new/short transcript must stay below the navigation header.
-        // Bottom-following a viewport-sized lazy layout can move its padded
-        // first row above the visible region until the user pulls it down.
+        // Explicit jumps are reserved for user actions (send/latest).
+        // Size changes are handled by ScrollView's native anchor policy.
         withTransaction(transaction) {
-            scrollPosition.scrollTo(edge: transcriptFitsViewport ? .top : .bottom)
+            scrollPosition.scrollTo(edge: .bottom)
         }
     }
 

@@ -418,6 +418,8 @@ jobs:
             -only-testing:LitterUITests/LitterUITests/testConversationDisplaySettingsRowsAreReachable \
             -only-testing:LitterUITests/LitterUITests/testConversationComposerAcceptsSimulatorKeyboardInput \
             -only-testing:LitterUITests/LitterUITests/testConversationComposerPreservesRapidKeyboardInput \
+            -only-testing:LitterUITests/LitterUITests/testKeyboardPresentationWithShortTranscript \
+            -only-testing:LitterUITests/LitterUITests/testKeyboardPresentationWithLongTranscript \
             test-without-building
 
       - name: Upload harness UI test results
