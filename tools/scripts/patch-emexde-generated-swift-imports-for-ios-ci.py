@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Patch emexDE sources that depend on the generated Swift ObjC header.
 
-Fresh GitHub iOS runners can compile Objective-C files before emexDE-Swift.h
-is available to those files. This keeps upstream sources in the repo and rewrites
-only CI checkout copies to use local Objective-C shims for the small bridge types
-those files reference.
+The emexDE framework must expose the real Swift-generated Nyxian-Swift.h.
+Never replace upstream Objective-C imports with locally invented declarations,
+or bypass its genuine NXApplicationState class.
 """
 from pathlib import Path
 
@@ -25,12 +24,14 @@ for source in Path("ThirdParty/EmexDE/Source").rglob("*"):
     if source.suffix not in {".h", ".m", ".mm", ".cpp", ".hpp"}:
         continue
     text = source.read_text(errors="ignore")
-    normalized = text.replace("#import <Nyxian-Swift.h>", '#import "Nyxian-Swift.h"').replace("#import <emexDE-Swift.h>", '#import "Nyxian-Swift.h"')
+    normalized = (text.replace("#import <Nyxian-Swift.h>", '#import <emexDE/Nyxian-Swift.h>')
+                      .replace("#import <emexDE-Swift.h>", '#import <emexDE/Nyxian-Swift.h>')
+                      .replace('#import "Nyxian-Swift.h"', '#import <emexDE/Nyxian-Swift.h>'))
     if normalized != text:
         source.write_text(normalized)
         changed.append(source)
 
-# Match the Objective-C shim's class symbol without changing theme behavior.
+# Expose the actual upstream class under a stable ObjC name.
 theme_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/UI/CodeEditor/CodeEditor+Theme.swift")
 theme_text = theme_bridge.read_text()
 theme_before = "@objc class LDETheme: NSObject, Theme {"
@@ -55,23 +56,7 @@ for before, after in bridge_replacements.items():
     bridge_text = bridge_text.replace(before, after)
 terminal_bridge.write_text(bridge_text)
 
-terminal_session = Path("ThirdParty/EmexDE/Source/Nyxian/LindChain/WindowServer/Session/NXWindowSessionTerminal.m")
-terminal_session_text = terminal_session.read_text()
-terminal_session_shim = "\n".join([
-    "#import <UIKit/UIKit.h>",
-    "@class TerminalView;",
-    "@protocol TerminalViewDelegateObjC <NSObject>",
-    "@end",
-    "@interface TerminalViewObjC : UIView",
-    "@property (nonatomic, weak, nullable) id<TerminalViewDelegateObjC> objcDelegate;",
-    "@property (nonatomic, strong, nullable) NSFileHandle *ttyHandle;",
-    "- (nonnull instancetype)initWithFrame:(CGRect)frame masterFD:(int32_t)masterFD;",
-    "@end",
-])
-if '#import "Nyxian-Swift.h"' not in terminal_session_text and terminal_session_shim not in terminal_session_text:
-    raise SystemExit("Missing expected emexDE terminal session Swift import")
-terminal_session_text = terminal_session_text.replace('#import "Nyxian-Swift.h"', terminal_session_shim)
-terminal_session.write_text(terminal_session_text)
+# NXWindowSessionTerminal uses the real generated Swift interface.
 
 os_version_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/UI/FileList/iOSVersionPickerView.swift")
 os_version_text = os_version_bridge.read_text()
@@ -117,95 +102,8 @@ if application_management_after not in application_management_text:
     application_management_text = application_management_text.replace(application_management_before, application_management_after, 1)
 application_management_bridge.write_text(application_management_text)
 
-def replace_generated_swift_import(source_path, shim, label):
-    source = Path(source_path)
-    if not source.is_file():
-        # Upstream folded NXTarget into NXProject in its newer source layout.
-        if source.name == "NXTarget.m" and Path("ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXProject.m").is_file():
-            return
-        raise SystemExit(f"Missing expected emexDE source for {label}: {source}")
-    source_text = source.read_text()
-    marker = '#import "Nyxian-Swift.h"'
-    if marker not in source_text:
-        if shim and shim in source_text:
-            return
-        if not shim:
-            return
-        raise SystemExit(f"Missing expected emexDE Swift import for {label}")
-    source.write_text(source_text.replace(marker, shim))
-
-notification_objc_shim = "\n".join([
-    "#import <Foundation/Foundation.h>",
-    "typedef NS_ENUM(NSInteger, NotifLevel) {",
-    "    NotifLevelNote = 0,",
-    "    NotifLevelWarning = 1,",
-    "    NotifLevelError = 2,",
-    "};",
-    "@interface NotificationServer : NSObject",
-    "+ (void)NotifyUserWithLevel:(NotifLevel)level notification:(NSString *)notification delay:(double)delay;",
-    "@end",
-])
-nxos_version_objc_shim = "\n".join([
-    "#import <Foundation/Foundation.h>",
-    "#import <MobileDevelopmentKit/MDKOSVersion.h>",
-    "@interface NXOSVersion : NSObject",
-    "+ (NSArray<MDKOSVersion *> *)NXOSVersionSupportedBuildVersionsRaw;",
-    "@end",
-])
-application_management_objc_shim = "\n".join([
-    "#import <Foundation/Foundation.h>",
-    "@class LDEApplicationObject;",
-    "@interface ApplicationManagementViewController : NSObject",
-    "+ (instancetype)shared;",
-    "- (void)applicationWasInstalled:(LDEApplicationObject *)app;",
-    "- (void)applicationWithBundleIdentifierWasUninstalled:(NSString *)bundleIdentifier;",
-    "@end",
-])
-# The declarations below describe the real Swift class compiled from
-# upstream SlotEntry.swift. This is only the Objective-C interface, not an
-# alternate implementation of Nyxian's extension state.
-nxapplicationstate_objc_interface = "\n".join([
-    "@interface NXApplicationState : NSObject",
-    "+ (BOOL)extensionLessMode;",
-    "@end",
-])
-replace_generated_swift_import(
-    "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXBootstrap.m",
-    '#import <LindChain/ProcEnvironment/Surface/trust/keychain.h>\n' +
-    notification_objc_shim + "\n" + nxapplicationstate_objc_interface,
-    "NXBootstrap upstream NXApplicationState interface",
-)
-replace_generated_swift_import(
-    "ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/PEProcessManager.m",
-    notification_objc_shim,
-    "PEProcessManager notification bridge",
-)
-replace_generated_swift_import(
-    "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXTarget.m",
-    "#import <MobileDevelopmentKit/MDKOSVersion.h>",
-    "NXTarget OS version import",
-)
-replace_generated_swift_import(
-    "ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/PEUserspaceManager.m",
-    notification_objc_shim,
-    "PEUserspaceManager notification bridge",
-)
-replace_generated_swift_import(
-    "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEConsole/NXConsoleView.m",
-    "\n".join([
-        "#import <UIKit/UIKit.h>",
-        "@interface LDETheme : NSObject",
-        "+ (nullable LDETheme *)current;",
-        "@property (nonatomic, readonly, nonnull) UIColor *gutterHairlineColor;",
-        "@end",
-    ]),
-    "NXConsoleView Swift theme bridge",
-)
-replace_generated_swift_import(
-    "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXProject.m",
-    '#import <LindChain/IDEFoundation/NXBootstrap.h>\n' + nxos_version_objc_shim,
-    "NXProject OS version bridge",
-)
+# Keep every Swift/Objective-C consumer connected to the actual upstream types.
+# No hand-authored shims and no rewrites of real Swift feature implementations.
 
 def ensure_liveprocess_info_plist_metadata():
     plist_path = Path("ThirdParty/EmexDE/Source/LiveProcess/Info.plist")
@@ -243,21 +141,9 @@ ensure_liveprocess_info_plist_metadata()
 # version marker advances. Replace from the same upstream download atomically.
 bootstrap = Path("ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXBootstrap.m")
 bootstrap_text = bootstrap.read_text()
-# Preserve upstream Nyxian's original extension decision. The Objective-C
-# interface above calls the actual Swift NXApplicationState defined in
-# SlotEntry.swift; no C reimplementation, stubs, or behavioral bypasses.
-if "if(!NXApplicationState.extensionLessMode)" not in bootstrap_text:
-    raise SystemExit("Upstream NXBootstrap extension-mode check was altered")
-swift_state_path = Path("ThirdParty/EmexDE/Source/Nyxian/UI/SlotEntry.swift")
-swift_state = swift_state_path.read_text()
-original_state = "@objc class NXApplicationState: NSObject {"
-named_state = "@objc(NXApplicationState) class NXApplicationState: NSObject {"
-if original_state in swift_state:
-    # Stable Objective-C runtime class name for same-target ObjC compilation.
-    # The Swift implementation and all original properties stay unchanged.
-    swift_state_path.write_text(swift_state.replace(original_state, named_state, 1))
-elif named_state not in swift_state:
-    raise SystemExit("Missing actual upstream NXApplicationState Swift class")
+# NXBootstrap continues to call upstream NXApplicationState.extensionLessMode
+# using the generated Swift-to-ObjC header, not a stand-in declaration.
+
 # Standalone Nyxian owns all of Documents; embedded Nyxian must own only a
 # child directory because upstream failure recovery clears rootURL entirely.
 old_root = 'stringByAppendingPathComponent:@"Documents"]];'
@@ -280,7 +166,7 @@ bootstrap.write_text(bootstrap_text)
 print(f"Normalized {len(changed)} emexDE generated Swift imports.")
 for source in changed:
     print(source)
-print("Exposed emexDE Swift bridge declarations for generated ObjC headers.")
+print("Preserved upstream generated Swift-to-Objective-C interface; no fake declarations.")
 
 # Target identity must not depend on whether Xcode has emitted its Swift header.
 workspace = Path("ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationWorkspace.m")
@@ -296,7 +182,7 @@ if workspace.exists():
 # emexDE.framework/Headers directory. A quoted header import searches the
 # source directory, not the framework's generated public headers. Use a
 # framework-qualified import for the remaining Nyxian Objective-C consumers;
-# files needing CI-only shims have already been rewritten above.
+# no CI-only shims are used.
 framework_import = '#import <emexDE/Nyxian-Swift.h>'
 local_import = '#import "Nyxian-Swift.h"'
 framework_imports = []
