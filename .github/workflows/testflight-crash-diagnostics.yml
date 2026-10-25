@@ -2,6 +2,9 @@ name: TestFlight Crash Diagnostics
 
 on:
   workflow_dispatch:
+  schedule:
+    # Retry unavailable TestFlight crash attachments daily while Apple retains them.
+    - cron: '23 3 * * *'
   push:
     branches: [main]
     paths:
@@ -150,6 +153,46 @@ jobs:
               print("RESULT: Unable to list crash submissions (HTTP", status, ").")
               sys.exit(1)
           recent = page.get("data", [])
+
+          # GitHub asc-crash-fetcher retries missing logs; also attempt Apple's
+          # JSON:API compound-document inclusion to avoid assuming a separate
+          # /crashLog resource must exist.
+          expanded_status, expanded = get(
+              "/v1/apps/" + os.environ["APP_ID"] + "/betaFeedbackCrashSubmissions",
+              {"limit": 100, "include": "crashLog",
+               "fields[betaCrashLogs]": "logText"}
+          )
+          included_logs = [x for x in (expanded.get("included") or [])
+                           if x.get("type") == "betaCrashLogs"]
+          print("COMPOUND_CRASH_LOGS:", json.dumps({
+              "http_status": expanded_status,
+              "included_logs": len(included_logs)
+          }, separators=(",", ":")))
+          for entry in included_logs[:8]:
+              attrs = entry.get("attributes") or {}
+              print("COMPOUND_LOG_STACK:", json.dumps({
+                  "log_id": safe_text(entry.get("id"), 65),
+                  "crash": inspect(attrs.get("logText"))
+              }, separators=(",", ":")))
+          if focus_id:
+              focused_status, focused = get(
+                  "/v1/betaFeedbackCrashSubmissions/" +
+                  urllib.parse.quote(focus_id, safe=""),
+                  {"include": "crashLog", "fields[betaCrashLogs]": "logText"})
+              focus_links = ((focused.get("data") or {}).get("relationships") or {}).get("crashLog") or {}
+              related_id = (focus_links.get("data") or {}).get("id") if isinstance(focus_links.get("data"), dict) else None
+              logs = [x for x in (focused.get("included") or [])
+                      if x.get("type") == "betaCrashLogs"]
+              print("FOCUS_COMPOUND_LOG:", json.dumps({
+                  "http_status": focused_status,
+                  "linked_log_id": bool(related_id),
+                  "included_log_count": len(logs)
+              }, separators=(",", ":")))
+              for log in logs[:1]:
+                  print("FOCUS_COMPOUND_STACK:", json.dumps(
+                      inspect((log.get("attributes") or {}).get("logText")),
+                      separators=(",", ":")))
+
           print("SUBMISSION_COUNT_FIRST_PAGE:", len(recent))
           ids = {item.get("id") for item in submissions}
           # Prefer recent iPhone 16 crashes and the shared crash ID; never dump
