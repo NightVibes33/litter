@@ -17,7 +17,6 @@ struct LocalFileWorkspaceView: View {
     @State private var renameTarget: LocalFileEntry?
     @State private var renameText = ""
     @State private var moveTarget: LocalFileEntry?
-    @State private var moveDestination = ""
     @State private var deleteTarget: LocalFileEntry?
     @State private var showDeleteSelection = false
     @State private var alertMessage: String?
@@ -25,6 +24,8 @@ struct LocalFileWorkspaceView: View {
     @State private var inspectorTarget: LocalFileEntry?
     @State private var sharePayload: LocalFileSharePayload?
     @State private var commandOutput: LocalCommandOutput?
+    @State private var deferredInspectorAction: LocalFileDeferredAction?
+    @State private var deferredPreviewAction: LocalFileDeferredAction?
 
     @StateObject private var taskBag = ViewTaskBag()
     var body: some View {
@@ -37,17 +38,25 @@ struct LocalFileWorkspaceView: View {
 
     private var sheetLayer: some View {
         alertLayer
-            .sheet(item: $previewTarget) { file in
+            .sheet(item: $previewTarget, onDismiss: completePreviewAction) { file in
                 previewSheet(for: file)
             }
-            .sheet(item: $inspectorTarget) { file in
+            .sheet(item: $inspectorTarget, onDismiss: completeInspectorAction) { file in
                 LocalFileInspectorSheet(
                     file: file,
-                    onPreview: { previewTarget = file },
-                    onEdit: { model.openFile = file },
-                    onCopyPath: { copyPath(file.path) },
-                    onCopyBotMention: { copyBotMention(file) },
-                    onOpenTerminal: { openTerminal(at: terminalPath(for: file)) }
+                    onPreview: { deferInspector(.preview(file)) },
+                    onEdit: { deferInspector(.edit(file)) },
+                    onCopyPath: { deferInspector(.copyPath(file.path)) },
+                    onCopyBotMention: { deferInspector(.copyBotMention(file)) },
+                    onOpenTerminal: { deferInspector(.terminal(terminalPath(for: file))) }
+                )
+            }
+            .sheet(item: $moveTarget) { file in
+                LocalFileMoveDestinationSheet(
+                    file: file,
+                    initialDirectory: model.currentPath,
+                    showHidden: model.showHidden,
+                    onMove: { destination in try await model.move(file, toDirectory: destination) }
                 )
             }
             .sheet(item: $model.openFile) { file in
@@ -111,19 +120,6 @@ struct LocalFileWorkspaceView: View {
                     renameTarget = nil
                     taskBag.run { await rename(target, to: name) }
                 }
-            }
-            .alert("Move Item", isPresented: Binding(get: { moveTarget != nil }, set: { if !$0 { moveTarget = nil } }), presenting: moveTarget) { target in
-                TextField("Destination folder", text: $moveDestination)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                Button("Cancel", role: .cancel) { moveTarget = nil }
-                Button("Move") {
-                    let destination = moveDestination
-                    moveTarget = nil
-                    taskBag.run { await move(target, toDirectory: destination) }
-                }
-            } message: { target in
-                Text("Move \(target.name) to another iSH folder. You can use ~ for /root.")
             }
     }
 
@@ -199,18 +195,42 @@ struct LocalFileWorkspaceView: View {
     private func previewSheet(for file: LocalFileEntry) -> some View {
         LocalFilePreviewSheet(
             file: file,
-            onEdit: { openEditorAfterPreview(file) },
-            onShare: { taskBag.run { await share([file]) } },
-            onCopyPath: { copyPath(file.path) }
+            onEdit: { deferPreview(.edit(file)) },
+            onShare: { deferPreview(.share(file)) },
+            onCopyPath: { deferPreview(.copyPath(file.path)) }
         )
     }
 
-    private func openEditorAfterPreview(_ file: LocalFileEntry) {
+    private func deferInspector(_ action: LocalFileDeferredAction) {
+        deferredInspectorAction = action
+        inspectorTarget = nil
+    }
+
+    private func deferPreview(_ action: LocalFileDeferredAction) {
+        deferredPreviewAction = action
         previewTarget = nil
-        taskBag.run {
-            try? await Task.sleep(nanoseconds: 200_000_000)
-            guard !Task.isCancelled else { return }
-            model.openFile = file
+    }
+
+    private func completeInspectorAction() {
+        guard let action = deferredInspectorAction else { return }
+        deferredInspectorAction = nil
+        performDeferredFileAction(action)
+    }
+
+    private func completePreviewAction() {
+        guard let action = deferredPreviewAction else { return }
+        deferredPreviewAction = nil
+        performDeferredFileAction(action)
+    }
+
+    private func performDeferredFileAction(_ action: LocalFileDeferredAction) {
+        switch action {
+        case .preview(let file): previewTarget = file
+        case .edit(let file): model.openFile = file
+        case .share(let file): taskBag.run { await share([file]) }
+        case .copyPath(let path): copyPath(path)
+        case .copyBotMention(let file): copyBotMention(file)
+        case .terminal(let path): openTerminal(at: path)
         }
     }
 
@@ -542,7 +562,9 @@ struct LocalFileWorkspaceView: View {
 
     @ViewBuilder
     private func contextMenu(for entry: LocalFileEntry) -> some View {
-        Button("Preview", systemImage: "doc.text.magnifyingglass") { previewTarget = entry }
+        if entry.kind != .directory && !entry.isBrokenLink {
+            Button("Preview", systemImage: "doc.text.magnifyingglass") { previewTarget = entry }
+        }
         Button("Inspector", systemImage: "info.circle") { inspectorTarget = entry }
         Button("Copy Path", systemImage: "doc.on.doc") { copyPath(entry.path) }
         Button("Copy Chat Link", systemImage: "link") { copyChatLink(title: entry.name, path: entry.path) }
@@ -554,7 +576,7 @@ struct LocalFileWorkspaceView: View {
             model.toggleFavorite(entry)
         }
         Button("Share", systemImage: "square.and.arrow.up") { taskBag.run { await share([entry]) } }
-        if entry.kind == .file || entry.kind == .symlink {
+        if entry.kind == .file {
             Button("Make Executable", systemImage: "checkmark.shield") { taskBag.run { await makeExecutable(entry) } }
         }
         Divider()
@@ -573,7 +595,7 @@ struct LocalFileWorkspaceView: View {
         if entry.isSwiftSource {
             Button("Swift Check", systemImage: "checkmark.seal") { taskBag.run { await runSwiftCheck(entry) } }
         }
-        if entry.name == "LitterBuild.json" {
+        if entry.name == "LitterBuild.json" && entry.kind == .file {
             Button("Swift Build", systemImage: "hammer") { taskBag.run { await runSwiftBuild(projectPath: entry.path) } }
             Button("Build IPA", systemImage: "shippingbox") { taskBag.run { await runIPABuild(projectPath: entry.path) } }
         }
@@ -617,7 +639,6 @@ struct LocalFileWorkspaceView: View {
 
     private func beginMove(_ entry: LocalFileEntry) {
         moveTarget = entry
-        moveDestination = model.displayPath
     }
 
     private func copyPath(_ path: String) {
@@ -689,22 +710,21 @@ struct LocalFileWorkspaceView: View {
     }
 
     private func extractArchive(_ entry: LocalFileEntry) async {
-        let nsName = entry.name as NSString
-        let folderName = nsName.deletingPathExtension.isEmpty ? "\(entry.name) extracted" : "\(nsName.deletingPathExtension) extracted"
+        let folderName = LocalFileArchiveNaming.extractedFolderName(entry.name)
         let destination = RemotePath.parse(path: entry.path).parent().join(name: folderName).asString()
-        let result: IshFS.Result
+        let extraction: (result: IshFS.Result, destination: String)
         do {
-            result = try await model.extract(entry, destination: destination)
+            extraction = try await model.extract(entry, destination: destination)
         } catch {
             alertMessage = error.localizedDescription
             return
         }
-        if result.exitCode == 0 {
+        if extraction.result.exitCode == 0 {
             await model.reload()
-            alertMessage = "Extracted to \(PathDisplay.display(destination, isLocal: true))."
+            alertMessage = "Extracted to \(PathDisplay.display(extraction.destination, isLocal: true))."
         } else {
-            let output = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
-            alertMessage = output.isEmpty ? "Could not extract archive (exit \(result.exitCode))." : output
+            let output = extraction.result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            alertMessage = output.isEmpty ? "Could not extract archive (exit \(extraction.result.exitCode))." : output
         }
     }
 
@@ -840,15 +860,14 @@ struct LocalFileWorkspaceView: View {
         }
         let folderName = (model.currentPath as NSString).lastPathComponent
         let appName = folderName.isEmpty ? "AlleyCatApp" : folderName
-        let manifest = """
-        {
-          "name": "\(appName)",
-          "entrypoint": "main.swift",
-          "sources": ["main.swift"],
-          "resources": []
-        }
-        """
         do {
+            let manifestData = try JSONSerialization.data(withJSONObject: [
+                "name": appName,
+                "entrypoint": "main.swift",
+                "sources": ["main.swift"],
+                "resources": [String]()
+            ], options: [.prettyPrinted, .sortedKeys])
+            let manifest = String(decoding: manifestData, as: UTF8.self)
             try await IshFS.writeTextFile(path: target, text: manifest + "\n")
             let mainPath = RemotePath.parse(path: model.currentPath).join(name: "main.swift").asString()
             if !(await IshFS.exists(path: mainPath)) {
@@ -909,19 +928,6 @@ struct LocalFileWorkspaceView: View {
         }
     }
 
-    private func move(_ target: LocalFileEntry, toDirectory rawDestination: String) async {
-        let destination = PathDisplay.expand(rawDestination.trimmingCharacters(in: .whitespacesAndNewlines), isLocal: true)
-        guard !destination.isEmpty else {
-            alertMessage = "Destination folder cannot be empty."
-            return
-        }
-        do {
-            try await model.move(target, toDirectory: destination)
-        } catch {
-            alertMessage = error.localizedDescription
-        }
-    }
-
     private func delete(_ target: LocalFileEntry) async {
         do {
             try await model.delete(target)
@@ -942,10 +948,7 @@ struct LocalFileWorkspaceView: View {
         do {
             let urls = try result.get()
             let destination = model.currentPath
-            for url in urls {
-                try Task.checkCancellation()
-                try await model.importFile(from: url, toDirectory: destination)
-            }
+            try await model.importFiles(from: urls, toDirectory: destination)
         } catch {
             alertMessage = error.localizedDescription
         }
@@ -1169,7 +1172,7 @@ private final class LocalFileWorkspaceModel {
     }
 
     var canNavigateUp: Bool {
-        !currentPath.isEmpty && currentPath != "/" && currentPath != HomeAnchor.path
+        !currentPath.isEmpty && currentPath != "/"
     }
 
     var trimmedSearchQuery: String {
@@ -1411,18 +1414,30 @@ private final class LocalFileWorkspaceModel {
         defer { isMutating = false }
         let target = RemotePath.parse(path: entry.path).parent().join(name: name).asString()
         try await IshFS.rename(path: entry.path, to: target)
-        removeStoredPath(entry.path)
+        relocateStoredPaths(from: entry.path, to: target)
         await reload()
     }
 
-    func move(_ entry: LocalFileEntry, toDirectory directory: String) async throws {
+    func move(_ entry: LocalFileEntry, toDirectory rawDirectory: String) async throws {
         try beginMutation()
         defer { isMutating = false }
+        let expanded = PathDisplay.expand(rawDirectory.trimmingCharacters(in: .whitespacesAndNewlines), isLocal: true)
+        guard expanded.hasPrefix("/") else {
+            throw NSError(domain: "LocalFileWorkspace", code: 6, userInfo: [
+                NSLocalizedDescriptionKey: "Choose an absolute folder path or a path beginning with ~."
+            ])
+        }
+        let directory = RemotePath.parse(path: expanded).asString()
         let check = await IshFS.run("[ -d \(IshFS.shellQuote(directory)) ]")
         guard check.exitCode == 0 else { throw makeError("Destination folder does not exist.", result: check) }
         let target = RemotePath.parse(path: directory).join(name: entry.name).asString()
+        guard target != entry.path else {
+            throw NSError(domain: "LocalFileWorkspace", code: 7, userInfo: [
+                NSLocalizedDescriptionKey: "This item is already in that folder. Choose another destination."
+            ])
+        }
         try await IshFS.rename(path: entry.path, to: target)
-        removeStoredPath(entry.path)
+        relocateStoredPaths(from: entry.path, to: target)
         await reload()
     }
 
@@ -1449,10 +1464,16 @@ private final class LocalFileWorkspaceModel {
         return target
     }
 
-    func extract(_ entry: LocalFileEntry, destination: String) async throws -> IshFS.Result {
+    func extract(_ entry: LocalFileEntry, destination: String) async throws -> (result: IshFS.Result, destination: String) {
         try beginMutation()
         defer { isMutating = false }
-        return await IshFS.extractArchive(path: entry.path, destination: destination)
+        let directory = RemotePath.parse(path: destination).parent().asString()
+        let name = (destination as NSString).lastPathComponent
+        let candidates = (0..<100).map { index in index == 0 ? name : "\(name) \(index + 1)" }
+        let available = try await firstAvailableName(candidates: candidates, directory: directory)
+        let target = RemotePath.parse(path: directory).join(name: available).asString()
+        let result = await IshFS.extractArchive(path: entry.path, destination: target)
+        return (result, target)
     }
 
     func delete(_ entry: LocalFileEntry) async throws {
@@ -1503,8 +1524,8 @@ private final class LocalFileWorkspaceModel {
         var urls: [URL] = []
         for entry in entries {
             try Task.checkCancellation()
-            if entry.kind == .directory {
-                let archivePath = "/tmp/litter-share-\(UUID().uuidString).tar.gz"
+            if entry.kind == .directory || (entry.kind == .symlink && await IshFS.isDirectory(path: entry.path)) {
+                let archivePath = "/tmp/alleycat-share-\(UUID().uuidString).tar.gz"
                 let result = await IshFS.compress(path: entry.path, destination: archivePath)
                 guard result.exitCode == 0 else { throw makeError("Could not prepare \(entry.name) for sharing", result: result) }
                 do {
@@ -1521,15 +1542,28 @@ private final class LocalFileWorkspaceModel {
         return urls
     }
 
-    func importFile(from url: URL, toDirectory directory: String) async throws {
+    func importFiles(from urls: [URL], toDirectory directory: String) async throws {
+        guard !urls.isEmpty else { return }
         try beginMutation()
         defer { isMutating = false }
-        _ = try await ConversationAttachmentSupport.importURLToFakeFS(
-            url: url,
-            destinationDirectory: directory,
-            treatImagesAsFiles: true,
-            preserveFakefsDestination: true
-        )
+        var imported = 0
+        do {
+            for url in urls {
+                try Task.checkCancellation()
+                _ = try await ConversationAttachmentSupport.importURLToFakeFS(
+                    url: url,
+                    destinationDirectory: directory,
+                    treatImagesAsFiles: true,
+                    preserveFakefsDestination: true
+                )
+                imported += 1
+            }
+        } catch {
+            await reload()
+            throw NSError(domain: "LocalFileWorkspace", code: 8, userInfo: [
+                NSLocalizedDescriptionKey: "\(imported) of \(urls.count) items imported. \(error.localizedDescription)"
+            ])
+        }
         await reload()
     }
 
@@ -1632,8 +1666,21 @@ private final class LocalFileWorkspaceModel {
     }
 
     private func removeStoredPath(_ path: String) {
-        favoriteItems.removeAll { $0.path == path }
-        recentItems.removeAll { $0.path == path }
+        favoriteItems.removeAll { $0.path == path || $0.path.hasPrefix(path + "/") }
+        recentItems.removeAll { $0.path == path || $0.path.hasPrefix(path + "/") }
+        save(favoriteItems, key: favoritesKey)
+        save(recentItems, key: recentsKey)
+    }
+
+    private func relocateStoredPaths(from oldPath: String, to newPath: String) {
+        func relocated(_ item: LocalFileStoredShortcut) -> LocalFileStoredShortcut {
+            guard item.path == oldPath || item.path.hasPrefix(oldPath + "/") else { return item }
+            let next = newPath + String(item.path.dropFirst(oldPath.count))
+            let name = (next as NSString).lastPathComponent
+            return LocalFileStoredShortcut(path: next, name: name, kindRaw: item.kindRaw, date: item.date)
+        }
+        favoriteItems = favoriteItems.map(relocated)
+        recentItems = recentItems.map(relocated)
         save(favoriteItems, key: favoritesKey)
         save(recentItems, key: recentsKey)
     }
@@ -2164,6 +2211,170 @@ private struct LocalFileEmptyState: View {
     }
 }
 
+
+private enum LocalFileDeferredAction {
+    case preview(LocalFileEntry)
+    case edit(LocalFileEntry)
+    case share(LocalFileEntry)
+    case copyPath(String)
+    case copyBotMention(LocalFileEntry)
+    case terminal(String)
+}
+
+private enum LocalFileArchiveNaming {
+    static func extractedFolderName(_ filename: String) -> String {
+        let lower = filename.lowercased()
+        let extensions = [".tar.gz", ".tar.xz", ".tar.bz2", ".tgz", ".txz", ".tbz2", ".zip", ".rar", ".tar", ".gz"]
+        let suffix = extensions.first { lower.hasSuffix($0) } ?? ""
+        let stem = suffix.isEmpty ? filename : String(filename.dropLast(suffix.count))
+        return "\(stem.isEmpty ? filename : stem) extracted"
+    }
+}
+
+/// A real folder chooser rather than a prefilled move alert that targets the
+/// same folder and inevitably fails. Browsing and validation use the same iSH
+/// fakefs service as the file listing.
+private struct LocalFileMoveDestinationSheet: View {
+    let file: LocalFileEntry
+    let showHidden: Bool
+    let onMove: (String) async throws -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var destination: String
+    @State private var folders: [LocalFileEntry] = []
+    @State private var isLoading = true
+    @State private var isMoving = false
+    @State private var errorMessage: String?
+    @State private var folderError: String?
+
+    init(file: LocalFileEntry, initialDirectory: String, showHidden: Bool, onMove: @escaping (String) async throws -> Void) {
+        self.file = file
+        self.showHidden = showHidden
+        self.onMove = onMove
+        _destination = State(initialValue: initialDirectory)
+    }
+
+    private var resolvedDestination: String {
+        PathDisplay.expand(destination.trimmingCharacters(in: .whitespacesAndNewlines), isLocal: true)
+    }
+
+    private var isCurrentFolder: Bool {
+        let sourceFolder = RemotePath.parse(path: file.path).parent().asString()
+        return RemotePath.parse(path: resolvedDestination).asString() == sourceFolder
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Destination") {
+                    TextField("Absolute folder path", text: $destination)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .font(.system(.subheadline, design: .monospaced))
+                    HStack {
+                        Button("Root", systemImage: "externaldrive") { destination = "/" }
+                        Spacer()
+                        Button("Home", systemImage: "house") { destination = HomeAnchor.path }
+                        Spacer()
+                        Button("Up", systemImage: "arrow.up") {
+                            let parent = RemotePath.parse(path: resolvedDestination).parent().asString()
+                            destination = parent.isEmpty ? "/" : parent
+                        }
+                        .disabled(resolvedDestination == "/")
+                    }
+                    .buttonStyle(.borderless)
+                    if isCurrentFolder {
+                        Text("Choose a different folder to move this item.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Section("Folders") {
+                    if isLoading {
+                        ProgressView("Reading folders…")
+                    } else if let folderError {
+                        Text(folderError).foregroundStyle(.red)
+                    } else if folders.isEmpty {
+                        Text("No subfolders here.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(folders) { folder in
+                            Button {
+                                destination = folder.path
+                            } label: {
+                                Label(folder.name, systemImage: "folder.fill")
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Move \(file.name)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task { await moveHere() }
+                    } label: {
+                        if isMoving { ProgressView() } else { Text("Move Here") }
+                    }
+                    .disabled(isMoving || isLoading || folderError != nil || isCurrentFolder)
+                }
+            }
+            .task(id: destination) {
+                try? await Task.sleep(for: .milliseconds(180))
+                guard !Task.isCancelled else { return }
+                await loadFolders()
+            }
+            .alert("Could Not Move Item", isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { errorMessage = nil }
+            } message: {
+                Text(errorMessage ?? "")
+            }
+        }
+    }
+
+    private func loadFolders() async {
+        isLoading = true
+        folderError = nil
+        folders = []
+        let path = resolvedDestination
+        guard path.hasPrefix("/") else {
+            folderError = "Enter an absolute folder path or a path beginning with ~."
+            isLoading = false
+            return
+        }
+        do {
+            let entries = try await IshFS.listDirectory(path: path, includeHidden: showHidden)
+            guard !Task.isCancelled else { return }
+            folders = entries.filter { $0.kind == .directory }.sorted {
+                $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
+        } catch {
+            guard !Task.isCancelled else { return }
+            folderError = error.localizedDescription
+        }
+        isLoading = false
+    }
+
+    private func moveHere() async {
+        guard !isMoving, !isLoading, folderError == nil, !isCurrentFolder else { return }
+        isMoving = true
+        defer { isMoving = false }
+        do {
+            try await onMove(resolvedDestination)
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
 private struct LocalTextFileEditorView: View {
     let file: LocalFileEntry
     let onClose: (Bool) -> Void
@@ -2306,7 +2517,9 @@ private struct LocalFilePreviewSheet: View {
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button(action: onCopyPath) { Image(systemName: "doc.on.doc") }
+                        .accessibilityLabel("Copy file path")
                     Button(action: onShare) { Image(systemName: "square.and.arrow.up") }
+                        .accessibilityLabel("Share file")
                     if file.isTextPreviewable {
                         Button("Edit") { onEdit() }
                     }
@@ -2445,8 +2658,8 @@ private struct LocalFileInspectorSheet: View {
                             if file.isTextPreviewable {
                                 LocalFileInspectorButton(title: "Edit", systemImage: "pencil", action: { perform(onEdit) })
                             }
-                            LocalFileInspectorButton(title: "Copy Path", systemImage: "doc.on.doc", action: onCopyPath)
-                            LocalFileInspectorButton(title: "Copy for Bot", systemImage: "bubble.left.and.text.bubble.right", action: onCopyBotMention)
+                            LocalFileInspectorButton(title: "Copy Path", systemImage: "doc.on.doc", action: { perform(onCopyPath) })
+                            LocalFileInspectorButton(title: "Copy for Bot", systemImage: "bubble.left.and.text.bubble.right", action: { perform(onCopyBotMention) })
                             LocalFileInspectorButton(title: "Open Terminal Here", systemImage: "terminal", action: { perform(onOpenTerminal) })
                         }
                     }
@@ -2463,9 +2676,8 @@ private struct LocalFileInspectorSheet: View {
         }
     }
 
-    private func perform(_ action: @escaping () -> Void) {
-        dismiss()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { action() }
+    private func perform(_ action: () -> Void) {
+        action() // Parent dismisses the sheet and presents the destination on onDismiss.
     }
 }
 
@@ -2517,7 +2729,7 @@ struct LitterTerminalPanel: View {
     let searchQuery: String
     let onBrowse: ((String) -> Void)?
     let onCopy: (String) -> Void
-    var hostTitle: String = "litter.local"
+    var hostTitle: String = "alleycat.local"
     var isLocalFilesystem: Bool = true
     var runCommand: ((String, String) async -> IshFS.Result)? = nil
 
@@ -2901,7 +3113,7 @@ struct LitterTerminalPanel: View {
 
     private var promptHost: String {
         let sanitized = hostTitle.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: " ", with: "-").lowercased()
-        return sanitized.isEmpty ? "litter" : sanitized
+        return sanitized.isEmpty ? "alleycat" : sanitized
     }
 
     private var canSubmit: Bool {

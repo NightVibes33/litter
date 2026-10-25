@@ -391,6 +391,11 @@ enum IshFS {
         return result.exitCode == 0
     }
 
+    static func isDirectory(path: String) async -> Bool {
+        let result = await run("[ -d \(shellQuote(path)) ]")
+        return result.exitCode == 0
+    }
+
     static func createDirectory(path: String) async throws {
         let result = await run("mkdir \(shellQuote(path))")
         guard result.exitCode == 0 else { throw error("Could not create folder. An item with that name may already exist.", result: result) }
@@ -406,10 +411,11 @@ enum IshFS {
         let output = shellQuote(destination)
         return await run("""
         set -u
-        mkdir -p \(output) || exit 2
+        [ ! -e \(output) ] && [ ! -L \(output) ] || { echo "Extraction folder already exists"; exit 17; }
+        mkdir -- \(output) || exit 2
         case \(archive) in
-          *.zip) command -v unzip >/dev/null 2>&1 && exec unzip -o \(archive) -d \(output) ;;
-          *.rar) command -v unar >/dev/null 2>&1 && exec unar -f -o \(output) \(archive); command -v unrar >/dev/null 2>&1 && exec unrar x -o+ \(archive) \(output)/ ;;
+          *.zip) command -v unzip >/dev/null 2>&1 && exec unzip -n \(archive) -d \(output) ;;
+          *.rar) command -v unar >/dev/null 2>&1 && exec unar -o \(output) \(archive); command -v unrar >/dev/null 2>&1 && exec unrar x -o- \(archive) \(output)/ ;;
           *.tar|*.tar.gz|*.tgz|*.tar.xz|*.txz) exec tar -xf \(archive) -C \(output) ;;
           *.gz)
             src=\(archive)
@@ -505,11 +511,11 @@ enum IshFS {
     static func copyFileToTemporaryURL(path: String, suggestedFileName: String? = nil, maxBytes: Int64 = 1_500_000_000) async throws -> URL {
         let size = try await fileSize(path: path)
         guard size <= maxBytes else {
-            throw NSError(domain: "IshFS", code: 5, userInfo: [NSLocalizedDescriptionKey: "File is too large to share from chat."])
+            throw NSError(domain: "IshFS", code: 5, userInfo: [NSLocalizedDescriptionKey: "File is too large to share from Alley Cãt Files."])
         }
 
         let fm = FileManager.default
-        let shareDir = fm.temporaryDirectory.appendingPathComponent("LitterSharedArtifacts", isDirectory: true)
+        let shareDir = fm.temporaryDirectory.appendingPathComponent("AlleyCatSharedArtifacts", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try fm.createDirectory(at: shareDir, withIntermediateDirectories: true)
         let name = sanitizedHostFileName(suggestedFileName ?? URL(fileURLWithPath: path).lastPathComponent)
