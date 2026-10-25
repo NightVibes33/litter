@@ -213,5 +213,80 @@ jobs:
                           "crash": inspect(linked_attrs.get("logText"))
                       }, separators=(",", ":")))
               printed += 1
+
+          # TestFlight feedback can lack a crashLog. Query Apple's independent
+          # build-level diagnostic signatures for performance hangs instead.
+          build_status, build_listing = get(
+              "/v1/apps/" + os.environ["APP_ID"] + "/builds",
+              {"limit": 50, "fields[builds]": "version,uploadedDate,processingState"}
+          )
+          print("BUILD_LIST_HTTP:", build_status)
+          builds = (build_listing.get("data") or []) if build_status == 200 else []
+          builds.sort(key=lambda x: (x.get("attributes") or {}).get("uploadedDate", ""), reverse=True)
+          # Known latest build ID from this repository's successful TestFlight
+          # upload, in case listing builds isn't accessible to this API role.
+          if not builds:
+              builds = [{"id": "95967222-a53e-42a0-85ad-2d80a187782f",
+                         "attributes": {"version": "20261024003454"}}]
+          for build in builds[:6]:
+              build_id = str(build.get("id") or "")
+              version = safe_text((build.get("attributes") or {}).get("version"), 55)
+              sig_status, sig_listing = get(
+                  "/v1/builds/" + urllib.parse.quote(build_id, safe="") + "/diagnosticSignatures",
+                  {"filter[diagnosticType]": "HANGS", "limit": 40}
+              )
+              signatures = (sig_listing.get("data") or []) if sig_status == 200 else []
+              print("HANG_SIGNATURE_SUMMARY:", json.dumps({
+                  "build": version, "http": sig_status, "signatures": len(signatures)
+              }, separators=(",", ":")))
+              for sig in signatures[:5]:
+                  signature_id = str(sig.get("id") or "")
+                  attrs = sig.get("attributes") or {}
+                  # Diagnostic logs have a dedicated Apple media type.
+                  url = base + "/v1/diagnosticSignatures/" + urllib.parse.quote(signature_id, safe="") + "/logs?limit=3"
+                  request = urllib.request.Request(url, headers={
+                      "Authorization": "Bearer " + token,
+                      "Accept": "application/vnd.apple.diagnostic-logs+json"
+                  })
+                  try:
+                      with urllib.request.urlopen(request, timeout=30) as response:
+                          logs_status = response.status
+                          logs = json.load(response)
+                  except urllib.error.HTTPError as exc:
+                      logs_status, logs = exc.code, {}
+                  except (ValueError, OSError):
+                      logs_status, logs = 0, {}
+                  print("HANG_SIGNATURE_DETAIL:", json.dumps({
+                      "build": version,
+                      "type": safe_text(attrs.get("diagnosticType"), 35),
+                      "signature_id": safe_text(signature_id, 70),
+                      "logs_http": logs_status
+                  }, separators=(",", ":")))
+                  if logs_status != 200:
+                      continue
+                  products = logs.get("productData") or []
+                  for product in products[:2]:
+                      for entry in (product.get("diagnosticLogs") or [])[:3]:
+                          # Never emit the entire diagnostic payload, which can
+                          # contain app/user data. Only extract stack symbols.
+                          frames = []
+                          def append_frames(nodes, depth=0):
+                              for node in nodes[:6]:
+                                  if not isinstance(node, dict):
+                                      continue
+                                  frames.append({
+                                      "image": safe_text(node.get("binaryName"), 50),
+                                      "symbol": safe_text(node.get("symbolName"), 120),
+                                      "samples": node.get("sampleCount") if isinstance(node.get("sampleCount"), int) else None
+                                  })
+                                  if depth < 2:
+                                      append_frames(node.get("subFrames") or [], depth + 1)
+                          for tree in (entry.get("callStackTree") or [])[:2]:
+                              for callstack in (tree.get("callStacks") or [])[:2]:
+                                  append_frames(callstack.get("callStackRootFrames") or [])
+                          print("HANG_STACK_FRAMES:", json.dumps({
+                              "build": version, "frames": frames[:20]
+                          }, separators=(",", ":")))
+
           print("RESULT: Inspected", printed, "TestFlight crash submissions. Sensitive raw logs and feedback were not retained or published.")
           PY
