@@ -178,15 +178,19 @@ final class ConversationAttachmentSupportTests: XCTestCase {
         XCTAssertNil(ConversationAttachmentSupport.loadPickedFile(at: url))
     }
 
+    func testCanonicalAttachmentFolderUsesAlleyCatFilesystem() {
+        XCTAssertEqual(ConversationAttachmentSupport.composerImportDirectory, "/root/.alleycat/attachments")
+    }
+
     func testImportedComposerChipUsesFakefsPath() {
         let imported = ConversationAttachment(
             kind: .file,
             displayName: "report.txt",
             detail: "imported",
-            fakefsPath: "/root/.litter/attachments/report.txt"
+            fakefsPath: "/root/.alleycat/attachments/report.txt"
         )
         let chip = ConversationAttachmentSupport.composerFileChip(for: imported)
-        XCTAssertEqual(chip?.path, "/root/.litter/attachments/report.txt")
+        XCTAssertEqual(chip?.path, "/root/.alleycat/attachments/report.txt")
         XCTAssertEqual(chip?.label, "report.txt")
     }
 
@@ -196,7 +200,7 @@ final class ConversationAttachmentSupportTests: XCTestCase {
             kind: .file,
             displayName: "report.txt",
             detail: "imported",
-            fakefsPath: "/root/.litter/attachments/report.txt"
+            fakefsPath: "/root/.alleycat/attachments/report.txt"
         )
         let additional = ConversationAttachmentSupport.buildTurnInputs(attachments: [imported])
         let payload = AppComposerPayload(
@@ -215,7 +219,7 @@ final class ConversationAttachmentSupportTests: XCTestCase {
             return XCTFail("Expected an iSH file mention in the submitted request")
         }
         XCTAssertEqual(name, "report.txt")
-        XCTAssertEqual(path, "/root/.litter/attachments/report.txt")
+        XCTAssertEqual(path, "/root/.alleycat/attachments/report.txt")
         XCTAssertNotEqual(path, providerURL)
         guard case .text(let prompt, _) = request.input[0] else {
             return XCTFail("Expected user draft as first request input")
@@ -226,8 +230,8 @@ final class ConversationAttachmentSupportTests: XCTestCase {
 
     func testImportedFolderAndArchiveKeepRuntimePaths() {
         let files = [
-            ConversationAttachment(kind: .folder, displayName: "Project", detail: "", fakefsPath: "/root/.litter/attachments/Project"),
-            ConversationAttachment(kind: .archive, displayName: "Project.zip", detail: "", fakefsPath: "/root/.litter/attachments/Project.zip")
+            ConversationAttachment(kind: .folder, displayName: "Project", detail: "", fakefsPath: "/root/.alleycat/attachments/Project"),
+            ConversationAttachment(kind: .archive, displayName: "Project.zip", detail: "", fakefsPath: "/root/.alleycat/attachments/Project.zip")
         ]
         let inputs = ConversationAttachmentSupport.buildTurnInputs(attachments: files)
         XCTAssertEqual(inputs.count, 2)
@@ -235,8 +239,8 @@ final class ConversationAttachmentSupportTests: XCTestCase {
               case .mention(_, let archivePath) = inputs[1] else {
             return XCTFail("Expected directory and archive file mentions")
         }
-        XCTAssertEqual(folderPath, "/root/.litter/attachments/Project")
-        XCTAssertEqual(archivePath, "/root/.litter/attachments/Project.zip")
+        XCTAssertEqual(folderPath, "/root/.alleycat/attachments/Project")
+        XCTAssertEqual(archivePath, "/root/.alleycat/attachments/Project.zip")
     }
 
     func testInvalidImportedPathIsRejectedBeforeSending() async {

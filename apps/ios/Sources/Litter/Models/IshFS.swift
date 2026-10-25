@@ -11,6 +11,11 @@ import Foundation
 /// directly (the directory picker, primarily).
 enum IshFS {
     static let nativeContainerMountPath = "/mnt/container"
+    /// Canonical Alley Cat paths inside iSH; old names remain aliases.
+    static let appDataRoot = "/root/.alleycat"
+    static let buildKitRoot = "/root/.alleycat/buildkit"
+    static let buildsRoot = "/root/.alleycat/builds"
+    static let composerAttachmentsRoot = "/root/.alleycat/attachments"
 
     struct Result {
         let exitCode: Int32
@@ -68,6 +73,89 @@ enum IshFS {
             repairCodexHomeBridgeOnReadyRuntimeSync()
         }.value
     }
+
+    /// Called after iSH bootstrap and before its runtime is published.
+    /// This must never call ensureLocalRuntimeReady or it will recurse.
+    @discardableResult
+    static func migrateAlleyCatFilesystemOnReadyRuntime() async -> Result {
+        guard LitterPlatform.supportsLocalRuntime else { return Result(exitCode: 0, output: "") }
+        return await Task.detached(priority: .utility) {
+            let res = ishRun(cmd: alleyCatFilesystemMigrationScript, cwd: "")
+            var output = String(data: res.output, encoding: .utf8) ?? ""
+            if res.exitCode < 0 && output.isEmpty {
+                output = diagnostic(for: res.exitCode)
+            }
+            return Result(exitCode: res.exitCode, output: output)
+        }.value
+    }
+
+    /// Idempotent and lossless. Never overwrites data when merging. Any
+    /// conflicts are moved to an explicit timestamped backup before the old
+    /// path is made an alias to the canonical Alley Cat directory.
+    private static let alleyCatFilesystemMigrationScript = """
+    set -eu
+    backup="/root/.alleycat-migration-backup-$(date +%Y%m%d%H%M%S)-$"
+    merge_contents() {
+      src="$1"
+      dst="$2"
+      relative="$3"
+      for entry in "$src"/* "$src"/.[!.]* "$src"/..?*; do
+        [ -e "$entry" ] || [ -L "$entry" ] || continue
+        name=$(basename "$entry")
+        target="$dst/$name"
+        if [ ! -e "$target" ] && [ ! -L "$target" ]; then
+          mv "$entry" "$target"
+        elif [ -d "$entry" ] && [ ! -L "$entry" ] && [ -d "$target" ] && [ ! -L "$target" ]; then
+          merge_contents "$entry" "$target" "$relative/$name"
+          rmdir "$entry"
+        else
+          mkdir -p "$backup/$relative"
+          mv "$entry" "$backup/$relative/$name"
+          printf 'Preserved legacy conflict at %s\\n' "$backup/$relative/$name"
+        fi
+      done
+    }
+    migrate_dir() {
+      legacy="$1"
+      canonical="$2"
+      if [ -L "$legacy" ]; then
+        [ "$(readlink "$legacy")" = "$canonical" ] || {
+          echo "Legacy filesystem link points elsewhere: $legacy"
+          return 1
+        }
+      elif [ -d "$legacy" ]; then
+        if [ ! -e "$canonical" ] && [ ! -L "$canonical" ]; then
+          mv "$legacy" "$canonical"
+        elif [ -d "$canonical" ] && [ ! -L "$canonical" ]; then
+          merge_contents "$legacy" "$canonical" "$(basename "$legacy")"
+          rmdir "$legacy"
+        else
+          echo "Cannot migrate $legacy: $canonical is not a directory"
+          return 1
+        fi
+        ln -s "$canonical" "$legacy"
+      elif [ -e "$legacy" ]; then
+        echo "Cannot migrate $legacy: unexpected file"
+        return 1
+      else
+        mkdir -p "$canonical"
+        ln -s "$canonical" "$legacy"
+      fi
+      mkdir -p "$canonical"
+    }
+    mkdir -p /root /root/.cache
+    migrate_dir /root/.litter /root/.alleycat
+    migrate_dir /root/.cache/litter /root/.cache/alleycat
+    migrate_dir /root/litter /root/alley-cat
+    mkdir -p /root/.alleycat/attachments /root/.alleycat/builds /root/.alleycat/buildkit/requests /root/projects
+    if [ -f /root/.litter-fakefs-version ] && [ ! -e /root/.alleycat-fakefs-version ]; then
+      mv /root/.litter-fakefs-version /root/.alleycat-fakefs-version
+    fi
+    if [ ! -e /root/.litter-fakefs-version ] && [ ! -L /root/.litter-fakefs-version ]; then
+      ln -s /root/.alleycat-fakefs-version /root/.litter-fakefs-version
+    fi
+    echo 'Alley Cat filesystem layout ready'
+    """
 
     /// Mount the native app container inside the iSH fakefs at `/mnt/container`.
     /// This exposes Documents, Library/Application Support, caches, logs, and
@@ -331,7 +419,7 @@ enum IshFS {
         body: ((String) async throws -> Void) async throws -> Void
     ) async throws {
         let target = shellQuote(path)
-        let tempPath = "\(path).litter-write-\(UUID().uuidString).tmp"
+        let tempPath = "\(path).alleycat-write-\(UUID().uuidString).tmp"
         let temp = shellQuote(tempPath)
         let create = await run(": > \(temp)")
         guard create.exitCode == 0 else { throw error("Could not write \(path)", result: create) }
@@ -461,7 +549,7 @@ enum IshFS {
         parent=$(cd "$parent" 2>/dev/null && pwd -P) || exit 2
         canonical=${parent%/}/$base
         case "$canonical" in
-          ""|"/"|"/root"|"/usr"|"/etc"|"/bin"|"/sbin"|"/lib"|"/dev"|"/mnt"|"/mnt/apps"|"/mnt/codex"|"\(nativeContainerMountPath)"|"/root/.codex")
+          ""|"/"|"/root"|"/usr"|"/etc"|"/bin"|"/sbin"|"/lib"|"/dev"|"/mnt"|"/mnt/apps"|"/mnt/codex"|"\(nativeContainerMountPath)"|"/root/.codex"|"/root/.alleycat"|"/root/.litter"|"/root/alley-cat"|"/root/litter"|"/root/.cache/alleycat"|"/root/.cache/litter")
             echo "Refusing to delete protected filesystem path: $p"
             exit 64
             ;;
@@ -484,7 +572,7 @@ enum IshFS {
             """
             set -eu
             mkdir -p /dev /tmp /var/tmp /usr/local/bin
-            mkdir -p /root/alley-cat /root/litter /root/.litter/buildkit/requests /root/.litter/builds 2>/dev/null || true
+            mkdir -p /root/alley-cat /root/.alleycat/attachments /root/.alleycat/buildkit/requests /root/.alleycat/builds 2>/dev/null || true
             chmod 1777 /tmp /var/tmp 2>/dev/null || true
             ensure_char_device() {
               path="$1"

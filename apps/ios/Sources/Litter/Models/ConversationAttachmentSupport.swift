@@ -349,7 +349,7 @@ enum ConversationAttachmentSupport {
     }
 
     /// Local picker/drop files must be copied to the fakefs before attaching.
-    static let composerImportDirectory = "/root/.litter/attachments"
+    static let composerImportDirectory = IshFS.composerAttachmentsRoot
 
     static func importComposerURL(_ url: URL, allowFileImport: Bool = true) async throws -> ConversationAttachment {
         if isPhotosLibraryInternalURL(url) || !allowFileImport {
@@ -378,7 +378,8 @@ enum ConversationAttachmentSupport {
     static func validateComposerAttachment(_ attachment: ConversationAttachment) async throws {
         if attachment.image != nil { return }
         guard let path = attachment.fakefsPath,
-              path.hasPrefix(composerImportDirectory + "/"),
+              (path.hasPrefix(composerImportDirectory + "/") ||
+               path.hasPrefix("/root/.litter/attachments/")),
               await IshFS.exists(path: path) else {
             throw NSError(domain: "ConversationAttachmentSupport", code: 7, userInfo: [
                 NSLocalizedDescriptionKey: "The imported file is missing from iSH. Reattach it before sending."

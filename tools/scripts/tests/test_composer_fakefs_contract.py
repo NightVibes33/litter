@@ -28,6 +28,8 @@ class FakefsComposerContractTests(unittest.TestCase):
         self.assertIn("validateComposerAttachment(attachment)", CONVERSATION)
         self.assertIn("validateComposerAttachment(imported)", ATTACHMENT)
         self.assertIn("await IshFS.exists(path: path)", ATTACHMENT)
+        self.assertIn('composerImportDirectory = IshFS.composerAttachmentsRoot', ATTACHMENT)
+        self.assertIn('path.hasPrefix("/root/.litter/attachments/")', ATTACHMENT)
         self.assertIn("private var composerFileChips", CONVERSATION)
         self.assertIn("var composerFileChips", HOME)
     def test_provider_urls_not_serialized_and_server_search_unchanged(self):

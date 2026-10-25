@@ -127,6 +127,13 @@ enum LitterPlatform {
             }
         }
 
+        let filesystemMigration = await IshFS.migrateAlleyCatFilesystemOnReadyRuntime()
+        if filesystemMigration.exitCode != 0 {
+            // Keep existing iSH data intact even if migration meets a
+            // nonstandard layout; a storage conflict must not block chat.
+            NSLog("[ish] Alley Cat filesystem migration warning rc=\(filesystemMigration.exitCode): \(filesystemMigration.output)")
+        }
+
         let codexBridge = await IshFS.repairCodexHomeBridgeOnReadyRuntime()
         if codexBridge.exitCode != 0 {
             let output = codexBridge.output.trimmingCharacters(in: .whitespacesAndNewlines)
