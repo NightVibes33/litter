@@ -1,0 +1,192 @@
+name: TestFlight Crash Diagnostics
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/testflight-crash-diagnostics.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-crashes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_PRIVATE_KEY_P8_B64: ${{ secrets.ASC_PRIVATE_KEY_P8_B64 }}
+      APP_ID: '6820112184'
+      FOCUS_CRASH_ID: 'AAH1c4uHyXicaXvrQ_yh2D0'
+    steps:
+      - name: Install JWT signing library
+        run: python3 -m pip install --disable-pip-version-check --quiet PyJWT cryptography
+      - name: Retrieve and inspect TestFlight crashes securely
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64, datetime, json, os, re, sys, time
+          import urllib.error, urllib.parse, urllib.request
+          import jwt
+
+          required = ("ASC_KEY_ID", "ASC_ISSUER_ID", "ASC_PRIVATE_KEY_P8_B64")
+          if any(not os.getenv(k) for k in required):
+              print("RESULT: Required App Store Connect API secrets are unavailable.")
+              sys.exit(1)
+
+          signing_key = base64.b64decode(os.environ["ASC_PRIVATE_KEY_P8_B64"]).decode()
+          now = int(time.time())
+          token = jwt.encode(
+              {"iss": os.environ["ASC_ISSUER_ID"], "iat": now,
+               "exp": now + 900, "aud": "appstoreconnect-v1"},
+              signing_key, algorithm="ES256",
+              headers={"kid": os.environ["ASC_KEY_ID"], "typ": "JWT"},
+          )
+          base = "https://api.appstoreconnect.apple.com"
+          def get(path, params=None):
+              url = base + path
+              if params:
+                  url += "?" + urllib.parse.urlencode(params)
+              request = urllib.request.Request(url, headers={
+                  "Authorization": "Bearer " + token, "Accept": "application/json"})
+              for retry in range(3):
+                  try:
+                      with urllib.request.urlopen(request, timeout=30) as response:
+                          return response.status, json.load(response)
+                  except urllib.error.HTTPError as exc:
+                      if exc.code in (429, 500, 502, 503) and retry < 2:
+                          time.sleep(2 ** retry + 1)
+                          continue
+                      return exc.code, {}
+                  except Exception as exc:
+                      print("Network request failed:", type(exc).__name__)
+                      return 0, {}
+              return 0, {}
+
+          def safe_text(value, length=100):
+              # Never emit crash-log text containing emails, file paths or tokens.
+              clean = re.sub(r"[^A-Za-z0-9._:+#()<>, -]", "?", str(value or ""))
+              return clean[:length]
+
+          def inspect(text):
+              if not isinstance(text, str) or not text:
+                  return {"state": "empty logText"}
+              # The .ips format can contain a JSON metadata line followed by a
+              # second JSON document. Decode both without echoing raw contents.
+              decoder = json.JSONDecoder()
+              objects = []
+              pos = 0
+              while pos < len(text) and len(objects) < 3:
+                  start = text.find("{", pos)
+                  if start == -1:
+                      break
+                  try:
+                      obj, size = decoder.raw_decode(text[start:])
+                      if isinstance(obj, dict):
+                          objects.append(obj)
+                      pos = start + size
+                  except ValueError:
+                      pos = start + 1
+              report = next((o for o in objects if
+                  any(k in o for k in ("threads", "exception", "termination"))), None)
+              if report:
+                  exc = report.get("exception") or {}
+                  term = report.get("termination") or {}
+                  threads = report.get("threads") or []
+                  idx = report.get("faultingThread")
+                  if not isinstance(idx, int) or not 0 <= idx < len(threads):
+                      idx = next((i for i, th in enumerate(threads) if th.get("triggered")), 0)
+                  frames = threads[idx].get("frames", []) if threads else []
+                  images = report.get("usedImages") or []
+                  clean_frames = []
+                  for frame in frames[:16]:
+                      symbol = frame.get("symbol") or ""
+                      image_idx = frame.get("imageIndex")
+                      image = images[image_idx] if isinstance(image_idx, int) and 0 <= image_idx < len(images) else {}
+                      module = str(image.get("name") or "").rsplit("/", 1)[-1]
+                      clean_frames.append({
+                          "module": safe_text(module, 55),
+                          "symbol": safe_text(symbol or "(unsymbolicated)", 125)})
+                  return {"exception_type": safe_text(exc.get("type"), 55),
+                          "exception_signal": safe_text(exc.get("signal"), 35),
+                          "termination_namespace": safe_text(term.get("namespace"), 55),
+                          "termination_code": safe_text(term.get("code"), 35),
+                          "faulting_thread": idx,
+                          "frames": clean_frames}
+              # Traditional .crash text format, without freeform feedback.
+              result = {}
+              for label in ("Exception Type", "Exception Codes", "Termination Reason", "Crashed Thread"):
+                  match = re.search(r"^" + re.escape(label) + r":\s*(.{1,130})", text, re.M)
+                  if match:
+                      result[label] = safe_text(match.group(1), 110)
+              header = re.search(r"^Thread \d+ Crashed:\s*$", text, re.M)
+              if header:
+                  region = text[header.end():].split("\n\n", 1)[0]
+                  frames = []
+                  for line in region.splitlines()[:18]:
+                      parts = line.strip().split()
+                      if len(parts) > 2 and parts[0].isdigit():
+                          frames.append({"module": safe_text(parts[1], 55),
+                                         "symbol": safe_text(" ".join(parts[3:])[:125], 125)})
+                  result["frames"] = frames
+              return result or {"state": "unrecognized log format, no raw log printed"}
+
+          focus_id = os.getenv("FOCUS_CRASH_ID", "")
+          submissions = []
+          if focus_id:
+              status, direct = get("/v1/betaFeedbackCrashSubmissions/" + urllib.parse.quote(focus_id, safe=""))
+              if status == 200 and direct.get("data", {}).get("id") == focus_id:
+                  submissions.append(direct["data"])
+                  print("FOCUS: Matched shared crash URL to Apple submission ID.")
+              else:
+                  print("FOCUS: URL ID not directly resolvable by Apple API (HTTP", status, "); checking recent submissions.")
+          params = {"limit": 100,
+                    "fields[betaFeedbackCrashSubmissions]":
+                        "createdDate,deviceModel,osVersion,appUptimeInMilliseconds,buildBundleId,crashLog"}
+          status, page = get("/v1/apps/" + os.environ["APP_ID"] + "/betaFeedbackCrashSubmissions", params)
+          if status != 200:
+              print("RESULT: Unable to list crash submissions (HTTP", status, ").")
+              sys.exit(1)
+          recent = page.get("data", [])
+          print("SUBMISSION_COUNT_FIRST_PAGE:", len(recent))
+          ids = {item.get("id") for item in submissions}
+          # Prefer recent iPhone 16 crashes and the shared crash ID; never dump
+          # arbitrary feedback comments or tester contact information.
+          ranked = sorted(recent, key=lambda x: (
+              x.get("id") != focus_id,
+              x.get("attributes", {}).get("deviceModel") not in ("iPhone17,3", "iPhone 16"),
+              x.get("attributes", {}).get("createdDate", "") < "2026-10-19",
+              x.get("attributes", {}).get("createdDate", "")),
+              reverse=False)
+          for item in ranked:
+              if len(submissions) >= 8:
+                  break
+              if item.get("id") not in ids:
+                  submissions.append(item)
+                  ids.add(item.get("id"))
+          if not submissions:
+              print("RESULT: No TestFlight crash submissions were available.")
+              sys.exit(0)
+          printed = 0
+          for item in submissions:
+              sid = item.get("id")
+              attrs = item.get("attributes") or {}
+              status, log = get("/v1/betaFeedbackCrashSubmissions/" + urllib.parse.quote(str(sid), safe="") + "/crashLog",
+                                {"fields[betaCrashLogs]": "logText"})
+              crash_attrs = (log.get("data") or {}).get("attributes") or {}
+              data = {
+                  "submission_id": safe_text(sid, 55),
+                  "created_date": safe_text(attrs.get("createdDate"), 40),
+                  "device_model": safe_text(attrs.get("deviceModel"), 45),
+                  "os_version": safe_text(attrs.get("osVersion"), 45),
+                  "uptime_ms": attrs.get("appUptimeInMilliseconds"),
+                  "crash_log_http": status
+              }
+              if status == 200:
+                  data["crash"] = inspect(crash_attrs.get("logText"))
+              print("CRASH_DIAGNOSTIC:", json.dumps(data, separators=(",", ":")))
+              printed += 1
+          print("RESULT: Inspected", printed, "TestFlight crash submissions. Sensitive raw logs and feedback were not retained or published.")
+          PY
