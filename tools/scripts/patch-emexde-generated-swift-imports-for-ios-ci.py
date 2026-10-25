@@ -169,14 +169,25 @@ for source in changed:
 print("Preserved upstream generated Swift-to-Objective-C interface; no fake declarations.")
 
 # Target identity must not depend on whether Xcode has emitted its Swift header.
-workspace = Path("ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationWorkspace.m")
-if workspace.exists():
-    text = workspace.read_text()
-    before = "#if __has_include(<Nyxian-Swift.h>)"
-    after = "#if HOST_ENV"
-    if before not in text and after + "\n#define LIVEPROCESS 0" not in text:
-        raise SystemExit("Missing expected LDEApplicationWorkspace host selection")
-    workspace.write_text(text.replace(before, after))
+from nyxian_workspace_host_patch import patch_workspace_host_selector
+
+# The shared LDEApplicationWorkspace.m is compiled twice: once into the
+# emexDE host framework and again into the LiveProcess extension. The upstream
+# header-presence test is not a reliable discriminator when the embedded
+# framework's Swift-generated header has not yet been emitted. Select the real
+# host path from the HOST_ENV build flag instead; the extension keeps the
+# upstream LiveShim syscall path. Never silently skip a missing submodule file.
+workspace = Path("ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationWorkspace.m")
+if not workspace.is_file():
+    raise SystemExit(f"Missing pinned Nyxian workspace source: {workspace}")
+original_workspace = workspace.read_text(encoding="utf-8")
+try:
+    normalized_workspace = patch_workspace_host_selector(original_workspace)
+except ValueError as error:
+    raise SystemExit(f"Unsafe Nyxian workspace host selection: {error}") from error
+if normalized_workspace != original_workspace:
+    workspace.write_text(normalized_workspace, encoding="utf-8")
+print(f"Nyxian shared workspace host selection verified: {workspace}")
 
 # Xcode places the generated Swift compatibility header inside the embedded
 # emexDE.framework/Headers directory. A quoted header import searches the

@@ -740,6 +740,7 @@ jobs:
         if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
         run: |
           set -euo pipefail
+          python3 -m unittest discover -s tools/scripts/tests -p 'test_nyxian_workspace_host_patch.py'
           python3 tools/scripts/patch-emexde-generated-swift-imports-for-ios-ci.py
 
       - name: Patch fast unsigned device project
