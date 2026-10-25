@@ -625,6 +625,12 @@ struct ConversationMessageList: View {
     /// for each scroll callback on long conversations.
     @State private var renderedTurnIndexByID: [String: Int] = [:]
     @State private var timelineProjection = ConversationTranscriptProjection()
+    // Stable, lightweight identities for SwiftUI's ForEach diffing. The full
+    // projection entries can embed large turns with message text; passing them
+    // directly through ForEach copies those values during geometry/keyboard
+    // updates even when no transcript content changed.
+    @State private var timelineEntryIDs: [String] = []
+    @State private var timelineEntryByID: [String: ConversationTranscriptProjection.Entry] = [:]
     @State private var expandedTurnIDs: Set<String> = []
     /// Explicit per-group toggles of turn work sections; unset groups follow
     /// the default (open while the turn streams, folded once it finishes).
@@ -633,7 +639,6 @@ struct ConversationMessageList: View {
     @State private var requestedOlderTurnsCursor: String?
     @State private var requestedOlderTurnsThreadKey: ThreadKey?
     @State private var showOlderPageLoader = false
-    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("collapseTurns") private var collapseTurns = false
     @AppStorage(ConversationDisplayPreferenceKey.reasoning) private var reasoningMode = ConversationDetailDisplayMode.collapsed.rawValue
     @AppStorage(ConversationDisplayPreferenceKey.commands) private var commandMode = ConversationDetailDisplayMode.collapsed.rawValue
@@ -677,17 +682,13 @@ struct ConversationMessageList: View {
 
     var body: some View {
         let _ = PerfTracker.event("ConversationMessageList.body")
-        // Do not keep the transcript's GeometryReader/LazyVStack alive while
-        // iOS is tearing down the foreground scene. This avoids layout work
-        // during process-exit and prevents the 0x8BADF00D watchdog path.
-        Group {
-            if scenePhase == .active {
-                activeTranscriptBody
-            } else {
-                Color.clear
-                    .accessibilityHidden(true)
-            }
-        }
+        // Keep the transcript mounted through inactive/background transitions.
+        // Replacing a large LazyVStack with Color.clear on scenePhase != .active
+        // forces SwiftUI to tear down its ForEach graph during the ten-second
+        // scene-update watchdog window, then rebuild everything on foreground.
+        // UIKit suspends display work automatically; destroying the view tree
+        // here adds work and loses scroll state.
+        activeTranscriptBody
     }
 
     @ViewBuilder
@@ -708,12 +709,14 @@ struct ConversationMessageList: View {
                         //   table) cannot widen the column; wide content
                         //   scrolls inside its own box.
                         LazyVStack(alignment: .leading, spacing: 10) {
-                            ForEach(timelineProjection.entries) { entry in
-                                transcriptRow(entry)
-                                    .modifier(ConversationWorkMemberModifier(isMember: entry.isWorkMember))
-                                    .modifier(TurnBoundaryModifier(isTurnStart: entry.startsTurn))
-                                    .frame(width: columnWidth, alignment: .leading)
-                                    .frame(maxWidth: .infinity)
+                            ForEach(timelineEntryIDs, id: \.self) { entryID in
+                                if let entry = timelineEntryByID[entryID] {
+                                    transcriptRow(entry)
+                                        .modifier(ConversationWorkMemberModifier(isMember: entry.isWorkMember))
+                                        .modifier(TurnBoundaryModifier(isTurnStart: entry.startsTurn))
+                                        .frame(width: columnWidth, alignment: .leading)
+                                        .frame(maxWidth: .infinity)
+                                }
                             }
 
                         }
@@ -744,6 +747,7 @@ struct ConversationMessageList: View {
                 .scrollDismissesKeyboard(.interactively)
                 .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.01) { turnIDs in
                     let visibleTurns = turnIDs.compactMap { timelineProjection.turnIDByEntryID[$0] }
+                    guard visibleTurns != visibleTurnIDs else { return }
                     visibleTurnIDs = visibleTurns
                     prefetchOlderTurnsIfNeeded(visibleTurnIDs: visibleTurns)
                 }
@@ -921,6 +925,23 @@ struct ConversationMessageList: View {
                 commands: .resolve(commandMode),
                 tools: .resolve(toolMode)
             )
+
+            // Derive IDs once per transcript projection change, not once per
+            // keyboard or scroll invalidation. Resolve full entries only for
+            // individual LazyVStack rows that SwiftUI actually constructs.
+            let entries = timelineProjection.entries
+            var ids: [String] = []
+            var lookup: [String: ConversationTranscriptProjection.Entry] = [:]
+            ids.reserveCapacity(entries.count)
+            lookup.reserveCapacity(entries.count)
+            for entry in entries {
+                if lookup[entry.id] == nil {
+                    ids.append(entry.id)
+                }
+                lookup[entry.id] = entry
+            }
+            timelineEntryByID = lookup
+            timelineEntryIDs = ids
         }
     }
 
