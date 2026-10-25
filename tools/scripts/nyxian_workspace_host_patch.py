@@ -26,6 +26,8 @@ def patch_workspace_host_selector(source: str) -> str:
     elif HOST_BRANCH not in source:
         raise ValueError("no recognized host selection in upstream source")
 
-    if source.count(HOST_BRANCH) != 1 or source.count(HOST_ENDIF) != 1:
+    # Another, unrelated HOST_ENV block in the same upstream file also ends
+    # with this comment. Only the selector itself must be unique.
+    if source.count(HOST_BRANCH) != 1 or HOST_ENDIF not in source.split(HOST_BRANCH, 1)[1]:
         raise ValueError("incomplete host selection conversion")
     return source

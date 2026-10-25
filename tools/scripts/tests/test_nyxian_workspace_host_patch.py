@@ -42,6 +42,14 @@ class NyxianWorkspaceHostPatchTests(unittest.TestCase):
         patched = patch_workspace_host_selector(UPSTREAM_WORKSPACE)
         self.assertEqual(patch_workspace_host_selector(patched), patched)
 
+    def test_unrelated_host_block_kept(self):
+        # Real pinned Nyxian also contains another independent HOST_ENV block.
+        source = UPSTREAM_WORKSPACE + "\n#if HOST_ENV\nvoid unrelated(void);\n#endif /* HOST_ENV */\n"
+        patched = patch_workspace_host_selector(source)
+        self.assertIn("void unrelated(void)", patched)
+        self.assertEqual(patched.count("#endif /* HOST_ENV */"), 2)
+        self.assertEqual(patch_workspace_host_selector(patched), patched)
+
     def test_missing_upstream_selector_fails_loudly(self):
         with self.assertRaises(ValueError):
             patch_workspace_host_selector(UPSTREAM_WORKSPACE.replace(OLD_BRANCH, "#if DEBUG"))
