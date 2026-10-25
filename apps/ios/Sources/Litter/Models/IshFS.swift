@@ -17,6 +17,19 @@ enum IshFS {
     static let buildsRoot = "/root/.alleycat/builds"
     static let composerAttachmentsRoot = "/root/.alleycat/attachments"
 
+    /// Canonicalize only Alley Cat-owned legacy fakefs paths. Keep references
+    /// in past chat messages valid through compatibility symlinks.
+    static func canonicalAlleyCatPath(_ path: String) -> String {
+        for (old, current) in [
+            ("/root/.cache/litter", "/root/.cache/alleycat"),
+            ("/root/.litter", appDataRoot),
+            ("/root/litter", "/root/alley-cat")
+        ] where path == old || path.hasPrefix(old + "/") {
+            return current + String(path.dropFirst(old.count))
+        }
+        return path
+    }
+
     struct Result {
         let exitCode: Int32
         let output: String

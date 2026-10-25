@@ -760,8 +760,8 @@ struct LocalFileWorkspaceView: View {
     }
 
     private func runSwiftCheck(_ entry: LocalFileEntry) async {
-        let result = await model.runCommand("litter-swift-check \(IshFS.shellQuote(entry.path))", cwd: model.currentPath)
-        commandOutput = LocalCommandOutput(title: "Swift Check", command: "litter-swift-check \(entry.name)", result: result)
+        let result = await model.runCommand("alleycat-swift-check \(IshFS.shellQuote(entry.path))", cwd: model.currentPath)
+        commandOutput = LocalCommandOutput(title: "Swift Check", command: "alleycat-swift-check \(entry.name)", result: result)
     }
 
     private func runSwiftBuild(projectPath: String? = nil) async {
@@ -770,8 +770,8 @@ struct LocalFileWorkspaceView: View {
             alertMessage = "No build manifest found in this folder."
             return
         }
-        let result = await model.runCommand("litter-swift-build --timeout 600 \(IshFS.shellQuote(path))", cwd: model.currentPath)
-        commandOutput = LocalCommandOutput(title: "Swift Build", command: "litter-swift-build \((path as NSString).lastPathComponent)", result: result)
+        let result = await model.runCommand("alleycat-swift-build --timeout 600 \(IshFS.shellQuote(path))", cwd: model.currentPath)
+        commandOutput = LocalCommandOutput(title: "Swift Build", command: "alleycat-swift-build \((path as NSString).lastPathComponent)", result: result)
     }
 
     private func runIPABuild(projectPath: String? = nil) async {
@@ -780,8 +780,8 @@ struct LocalFileWorkspaceView: View {
             alertMessage = "No build manifest found in this folder."
             return
         }
-        let result = await model.runCommand("litter-ipa-build --timeout 900 \(IshFS.shellQuote(path))", cwd: model.currentPath)
-        commandOutput = LocalCommandOutput(title: "IPA Build", command: "litter-ipa-build \((path as NSString).lastPathComponent)", result: result)
+        let result = await model.runCommand("alleycat-ipa-build --timeout 900 \(IshFS.shellQuote(path))", cwd: model.currentPath)
+        commandOutput = LocalCommandOutput(title: "IPA Build", command: "alleycat-ipa-build \((path as NSString).lastPathComponent)", result: result)
         await model.reload()
     }
 
@@ -847,13 +847,13 @@ struct LocalFileWorkspaceView: View {
     }
 
     private func runBuildStatus() async {
-        let result = await model.runCommand("litter-build-status", cwd: model.currentPath)
-        commandOutput = LocalCommandOutput(title: "Build Status", command: "litter-build-status", result: result)
+        let result = await model.runCommand("alleycat-build-status", cwd: model.currentPath)
+        commandOutput = LocalCommandOutput(title: "Build Status", command: "alleycat-build-status", result: result)
     }
 
     private func runFilesystemDoctor() async {
-        let result = await model.runCommand("litter-fs-doctor", cwd: model.currentPath)
-        commandOutput = LocalCommandOutput(title: "Filesystem Doctor", command: "litter-fs-doctor", result: result)
+        let result = await model.runCommand("alleycat-fs-doctor", cwd: model.currentPath)
+        commandOutput = LocalCommandOutput(title: "Filesystem Doctor", command: "alleycat-fs-doctor", result: result)
     }
 
     private func createLitterBuildManifest() async {
@@ -1287,7 +1287,7 @@ private final class LocalFileWorkspaceModel {
             LocalFileShortcut(source: .quick, path: "/mnt/codex", title: "Codex Home", subtitle: "/mnt/codex", systemImage: "folder.badge.gearshape", kind: .directory)
         ]
         if AppDistributionCapabilities.shouldRunSideloadBuildKitMonitor {
-            locations.insert(LocalFileShortcut(source: .quick, path: "/root/.litter/builds", title: "Builds", subtitle: "~/.litter/builds", systemImage: "hammer.fill", kind: .directory), at: min(3, locations.count))
+            locations.insert(LocalFileShortcut(source: .quick, path: IshFS.buildsRoot, title: "Builds", subtitle: "~/.alleycat/builds", systemImage: "hammer.fill", kind: .directory), at: min(3, locations.count))
         }
         if showAdvancedLocations {
             locations += [
@@ -1653,6 +1653,9 @@ private final class LocalFileWorkspaceModel {
     private func loadStoredShortcuts() {
         favoriteItems = load(key: favoritesKey)
         recentItems = load(key: recentsKey)
+        // Persist renamed paths so old branding does not reappear on launch.
+        save(favoriteItems, key: favoritesKey)
+        save(recentItems, key: recentsKey)
     }
 
     private func shortcut(_ stored: LocalFileStoredShortcut, source: LocalFileShortcut.Source) -> LocalFileShortcut {
@@ -1675,6 +1678,15 @@ private final class LocalFileWorkspaceModel {
         guard let data = UserDefaults.standard.data(forKey: key),
               let decoded = try? JSONDecoder().decode([LocalFileStoredShortcut].self, from: data) else { return [] }
         return decoded.filter { !$0.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .map { item in
+                let canonical = IshFS.canonicalAlleyCatPath(item.path)
+                return LocalFileStoredShortcut(
+                    path: canonical,
+                    name: (canonical as NSString).lastPathComponent,
+                    kindRaw: item.kindRaw,
+                    date: item.date
+                )
+            }
     }
 
     private func save(_ items: [LocalFileStoredShortcut], key: String) {
