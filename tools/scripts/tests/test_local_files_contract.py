@@ -32,6 +32,8 @@ class LocalFilesContractTests(unittest.TestCase):
         self.assertIn("await model.importFiles(from: urls, toDirectory: destination)", VIEW)
         self.assertIn('archivePath = "/tmp/alleycat-share-', VIEW)
         self.assertIn('return "alleycat-file://', VIEW)
+        self.assertIn("if allowsBuildTools {", VIEW)
+        self.assertIn("AppDistributionCapabilities.shouldRunSideloadBuildKitMonitor", VIEW)
         self.assertIn("relocateStoredPaths(from: entry.path, to: target)", VIEW)
 
     def test_archive_extracts_safely_to_unique_folder(self):

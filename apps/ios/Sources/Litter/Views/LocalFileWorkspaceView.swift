@@ -288,15 +288,17 @@ struct LocalFileWorkspaceView: View {
                     Button("Find Large Files", systemImage: "internaldrive") { taskBag.run { await runLargeFileSearch() } }
                     Button("Folder Tree", systemImage: "list.bullet.indent") { taskBag.run { await runTreeSnapshot() } }
                     Button("Git Status Here", systemImage: "point.3.connected.trianglepath.dotted") { taskBag.run { await runGitStatus() } }
-                    if model.hasLitterBuildManifest {
+                    if AppDistributionCapabilities.shouldRunSideloadBuildKitMonitor && model.hasLitterBuildManifest {
                         Divider()
                         Button("Swift Build", systemImage: "hammer") { taskBag.run { await runSwiftBuild() } }
                         Button("Build IPA", systemImage: "shippingbox") { taskBag.run { await runIPABuild() } }
                     }
                     Divider()
-                    Button("Build Status", systemImage: "chart.bar.doc.horizontal") { taskBag.run { await runBuildStatus() } }
+                    if AppDistributionCapabilities.shouldRunSideloadBuildKitMonitor {
+                        Button("Build Status", systemImage: "chart.bar.doc.horizontal") { taskBag.run { await runBuildStatus() } }
+                        Button("Create Build Manifest", systemImage: "doc.badge.gearshape") { taskBag.run { await createLitterBuildManifest() } }
+                    }
                     Button("Filesystem Doctor", systemImage: "stethoscope") { taskBag.run { await runFilesystemDoctor() } }
-                    Button("Create Build Manifest", systemImage: "doc.badge.gearshape") { taskBag.run { await createLitterBuildManifest() } }
                     Divider()
                     Button("Select", systemImage: "checkmark.circle") { model.isSelecting = true }
                     Button("Copy Folder Path", systemImage: "doc.on.doc") { copyPath(model.currentPath) }
@@ -413,6 +415,7 @@ struct LocalFileWorkspaceView: View {
                         stats: model.workspaceStats,
                         currentPath: model.displayPath,
                         advancedLocationsEnabled: model.showAdvancedLocations,
+                        allowsBuildTools: AppDistributionCapabilities.shouldRunSideloadBuildKitMonitor,
                         onBuildStatus: { taskBag.run { await runBuildStatus() } },
                         onDoctor: { taskBag.run { await runFilesystemDoctor() } },
                         onTerminal: { openTerminal(at: model.currentPath) },
@@ -458,6 +461,7 @@ struct LocalFileWorkspaceView: View {
                         stats: model.workspaceStats,
                         currentPath: model.displayPath,
                         advancedLocationsEnabled: model.showAdvancedLocations,
+                        allowsBuildTools: AppDistributionCapabilities.shouldRunSideloadBuildKitMonitor,
                         onBuildStatus: { taskBag.run { await runBuildStatus() } },
                         onDoctor: { taskBag.run { await runFilesystemDoctor() } },
                         onTerminal: { openTerminal(at: model.currentPath) },
@@ -592,10 +596,10 @@ struct LocalFileWorkspaceView: View {
         if entry.kind == .directory {
             Button("Summarize Directory", systemImage: "text.badge.magnifyingglass") { taskBag.run { await summarizeDirectory(entry) } }
         }
-        if entry.isSwiftSource {
+        if AppDistributionCapabilities.shouldRunSideloadBuildKitMonitor && entry.isSwiftSource {
             Button("Swift Check", systemImage: "checkmark.seal") { taskBag.run { await runSwiftCheck(entry) } }
         }
-        if entry.name == "LitterBuild.json" && entry.kind == .file {
+        if AppDistributionCapabilities.shouldRunSideloadBuildKitMonitor && entry.name == "LitterBuild.json" && entry.kind == .file {
             Button("Swift Build", systemImage: "hammer") { taskBag.run { await runSwiftBuild(projectPath: entry.path) } }
             Button("Build IPA", systemImage: "shippingbox") { taskBag.run { await runIPABuild(projectPath: entry.path) } }
         }
@@ -1278,11 +1282,13 @@ private final class LocalFileWorkspaceModel {
             LocalFileShortcut(source: .quick, path: HomeAnchor.path, title: "Home", subtitle: "~", systemImage: "house.fill", kind: .directory),
             LocalFileShortcut(source: .quick, path: "/root/alley-cat", title: "Alley Cãt", subtitle: "/root/alley-cat", systemImage: "shippingbox.fill", kind: .directory),
             LocalFileShortcut(source: .quick, path: "/root/projects", title: "Projects", subtitle: "/root/projects", systemImage: "folder.fill.badge.gearshape", kind: .directory),
-            LocalFileShortcut(source: .quick, path: "/root/.litter/builds", title: "Builds", subtitle: "~/.litter/builds", systemImage: "hammer.fill", kind: .directory),
             LocalFileShortcut(source: .quick, path: "/mnt/apps", title: "App Files", subtitle: "/mnt/apps", systemImage: "externaldrive.fill", kind: .directory),
             LocalFileShortcut(source: .quick, path: IshFS.nativeContainerMountPath, title: "App Container", subtitle: IshFS.nativeContainerMountPath, systemImage: "internaldrive.fill", kind: .directory),
             LocalFileShortcut(source: .quick, path: "/mnt/codex", title: "Codex Home", subtitle: "/mnt/codex", systemImage: "folder.badge.gearshape", kind: .directory)
         ]
+        if AppDistributionCapabilities.shouldRunSideloadBuildKitMonitor {
+            locations.insert(LocalFileShortcut(source: .quick, path: "/root/.litter/builds", title: "Builds", subtitle: "~/.litter/builds", systemImage: "hammer.fill", kind: .directory), at: min(3, locations.count))
+        }
         if showAdvancedLocations {
             locations += [
                 LocalFileShortcut(source: .quick, path: "/", title: "iSH Root", subtitle: "/", systemImage: "server.rack", kind: .directory),
@@ -1878,6 +1884,7 @@ private struct LocalFileWorkspaceOverview: View {
     let stats: LocalFileWorkspaceStats
     let currentPath: String
     let advancedLocationsEnabled: Bool
+    let allowsBuildTools: Bool
     let onBuildStatus: () -> Void
     let onDoctor: () -> Void
     let onTerminal: () -> Void
@@ -1911,9 +1918,11 @@ private struct LocalFileWorkspaceOverview: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     LocalFileActionChip(title: "Terminal", systemImage: "terminal", action: onTerminal)
-                    LocalFileActionChip(title: "Builds", systemImage: "chart.bar.doc.horizontal", action: onBuildStatus)
+                    if allowsBuildTools {
+                        LocalFileActionChip(title: "Builds", systemImage: "chart.bar.doc.horizontal", action: onBuildStatus)
+                        LocalFileActionChip(title: "Manifest", systemImage: "doc.badge.gearshape", action: onCreateManifest)
+                    }
                     LocalFileActionChip(title: "Doctor", systemImage: "stethoscope", action: onDoctor)
-                    LocalFileActionChip(title: "Manifest", systemImage: "doc.badge.gearshape", action: onCreateManifest)
                 }
             }
         }
