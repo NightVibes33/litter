@@ -18,11 +18,11 @@ class FakefsComposerContractTests(unittest.TestCase):
         self.assertIn(".dropDestination(for: URL.self)", CONVERSATION)
         self.assertIn("importPickedURLs(urls)", CONVERSATION)
     def test_home_picker_imports(self):
-        self.assertIn("attach.importPickedURLs(urls, allowFileImport: allowFileImport)", HOME)
+        self.assertIn("attach.importPickedURLs(urls, allowFileImport: allowFileImport, remoteServerId: remoteServerId, ssh: ssh)", HOME)
         self.assertIn("allowsMultipleSelection: true", HOME)
     def test_home_drop_imports(self):
         self.assertIn(".dropDestination(for: URL.self)", HOME)
-        self.assertIn("attach.importPickedURLs(urls, allowFileImport: allowsLocalFileImports)", HOME)
+        self.assertIn("remoteServerId: resolvedTranscriptionServerId, ssh: appModel.ssh", HOME)
     def test_both_send_paths_keep_real_fakefs_mentions(self):
         self.assertIn("buildTurnInputs(attachments: importedFiles)", CONVERSATION)
         self.assertIn("buildTurnInputs(attachments: importedFiles)", HOME)
@@ -33,8 +33,8 @@ class FakefsComposerContractTests(unittest.TestCase):
         self.assertIn("fileAttachments: fileReferences,", HOME)
         self.assertIn("same iSH command service", ATTACHMENT)
         self.assertIn("IshFS.fileSize(path: path)", ATTACHMENT)
-        self.assertIn("validateComposerAttachment(attachment)", HOME)
-        self.assertIn("validateComposerAttachment(attachment)", CONVERSATION)
+        self.assertIn("attachment, ssh: appModel.ssh, sshSessionId: sshSessionId", HOME)
+        self.assertIn("attachment, ssh: appModel.ssh, sshSessionId: sshSessionId", CONVERSATION)
         self.assertIn("validateComposerAttachment(imported)", ATTACHMENT)
         self.assertIn("let result = await IshFS.run(probe)", ATTACHMENT)
         self.assertIn('composerImportDirectory = IshFS.composerAttachmentsRoot', ATTACHMENT)
@@ -56,6 +56,19 @@ class FakefsComposerContractTests(unittest.TestCase):
         self.assertIn("AppComposerPayload.attachmentPathIssue", HOME)
         self.assertIn("actualSize == expectedSize", ATTACHMENT)
         self.assertIn("File transfer to iSH was incomplete", ATTACHMENT)
+
+    def test_ssh_zip_stream_is_verified_before_agent_receives_path(self):
+        self.assertIn("importComposerSSHURL", CONVERSATION)
+        self.assertIn("importComposerSSHURL", HOME)
+        self.assertIn("ssh.sshAttachmentBegin", ATTACHMENT)
+        self.assertIn("ssh.sshAttachmentAppend", ATTACHMENT)
+        self.assertIn("ssh.sshAttachmentVerify", ATTACHMENT)
+        self.assertIn("ssh.sshAttachmentCancel", ATTACHMENT)
+        self.assertIn("chunk.base64EncodedString()", ATTACHMENT)
+        self.assertIn("remoteByteCount", ATTACHMENT)
+        self.assertIn("attachment.remotePath ?? attachment.fakefsPath", ATTACHMENT)
+        self.assertIn("SshSessionStore.shared.sessionId", CONVERSATION)
+        self.assertIn("SshSessionStore.shared.sessionId", HOME)
 
     def test_import_failure_keeps_draft_and_blocks_inflight_submission(self):
         self.assertIn("pendingFileImports += 1", CONVERSATION)
