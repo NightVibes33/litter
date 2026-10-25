@@ -580,7 +580,7 @@ struct LocalFileWorkspaceView: View {
             Button("Make Executable", systemImage: "checkmark.shield") { taskBag.run { await makeExecutable(entry) } }
         }
         Divider()
-        if entry.isArchive {
+        if entry.isArchive && entry.kind == .file {
             Button("Extract Here", systemImage: "archivebox") { taskBag.run { await extractArchive(entry) } }
         }
         Button("Compress", systemImage: "doc.zipper") { taskBag.run { await compress(entry) } }
@@ -967,6 +967,9 @@ struct LocalFileWorkspaceView: View {
     private func validateName(_ raw: String) -> NameValidation {
         let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return .invalid("Name cannot be empty.") }
+        guard !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
+            return .invalid("File and folder names cannot contain control characters.")
+        }
         guard name != ".", name != ".." else { return .invalid("That name is reserved by the filesystem.") }
         guard !name.contains("/"), !name.contains("\\") else {
             return .invalid("Use a single file or folder name, not a path.")
@@ -1524,7 +1527,15 @@ private final class LocalFileWorkspaceModel {
         var urls: [URL] = []
         for entry in entries {
             try Task.checkCancellation()
-            if entry.kind == .directory || (entry.kind == .symlink && await IshFS.isDirectory(path: entry.path)) {
+            let exportAsDirectory: Bool
+            if entry.kind == .directory {
+                exportAsDirectory = true
+            } else if entry.kind == .symlink {
+                exportAsDirectory = await IshFS.isDirectory(path: entry.path)
+            } else {
+                exportAsDirectory = false
+            }
+            if exportAsDirectory {
                 let archivePath = "/tmp/alleycat-share-\(UUID().uuidString).tar.gz"
                 let result = await IshFS.compress(path: entry.path, destination: archivePath)
                 guard result.exitCode == 0 else { throw makeError("Could not prepare \(entry.name) for sharing", result: result) }
@@ -2260,7 +2271,8 @@ private struct LocalFileMoveDestinationSheet: View {
 
     private var isCurrentFolder: Bool {
         let sourceFolder = RemotePath.parse(path: file.path).parent().asString()
-        return RemotePath.parse(path: resolvedDestination).asString() == sourceFolder
+        return resolvedDestination.hasPrefix("/") &&
+            RemotePath.parse(path: resolvedDestination).asString() == sourceFolder
     }
 
     var body: some View {
@@ -2520,7 +2532,7 @@ private struct LocalFilePreviewSheet: View {
                         .accessibilityLabel("Copy file path")
                     Button(action: onShare) { Image(systemName: "square.and.arrow.up") }
                         .accessibilityLabel("Share file")
-                    if file.isTextPreviewable {
+                    if file.isTextPreviewable && !file.isBrokenLink {
                         Button("Edit") { onEdit() }
                     }
                 }
@@ -2655,7 +2667,7 @@ private struct LocalFileInspectorSheet: View {
                         LocalFileInfoPanel(file: file)
                         VStack(alignment: .leading, spacing: 10) {
                             LocalFileInspectorButton(title: "Preview", systemImage: "doc.text.magnifyingglass", action: { perform(onPreview) })
-                            if file.isTextPreviewable {
+                            if file.isTextPreviewable && !file.isBrokenLink {
                                 LocalFileInspectorButton(title: "Edit", systemImage: "pencil", action: { perform(onEdit) })
                             }
                             LocalFileInspectorButton(title: "Copy Path", systemImage: "doc.on.doc", action: { perform(onCopyPath) })
