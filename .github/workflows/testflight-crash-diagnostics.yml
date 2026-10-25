@@ -187,6 +187,31 @@ jobs:
               if status == 200:
                   data["crash"] = inspect(crash_attrs.get("logText"))
               print("CRASH_DIAGNOSTIC:", json.dumps(data, separators=(",", ":")))
+              # Apple exposes a separate relationship for a crash-log resource.
+              # A feedback submission can exist without an attached .ips report.
+              rel_status, rel = get(
+                  "/v1/betaFeedbackCrashSubmissions/" + urllib.parse.quote(str(sid), safe="") +
+                  "/relationships/crashLog"
+              )
+              linked = rel.get("data") if isinstance(rel, dict) else None
+              log_id = linked.get("id") if isinstance(linked, dict) else None
+              print("CRASH_LOG_RELATION:", json.dumps({
+                  "submission_id": safe_text(sid, 55),
+                  "http_status": rel_status,
+                  "has_attached_log": bool(log_id)
+              }, separators=(",", ":")))
+              if log_id and status != 200:
+                  log_status, linked_log = get(
+                      "/v1/betaCrashLogs/" + urllib.parse.quote(str(log_id), safe=""),
+                      {"fields[betaCrashLogs]": "logText"}
+                  )
+                  print("CRASH_LOG_FALLBACK_HTTP:", log_status)
+                  if log_status == 200:
+                      linked_attrs = (linked_log.get("data") or {}).get("attributes") or {}
+                      print("LINKED_CRASH_DIAGNOSTIC:", json.dumps({
+                          "submission_id": safe_text(sid, 55),
+                          "crash": inspect(linked_attrs.get("logText"))
+                      }, separators=(",", ":")))
               printed += 1
           print("RESULT: Inspected", printed, "TestFlight crash submissions. Sensitive raw logs and feedback were not retained or published.")
           PY
