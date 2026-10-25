@@ -112,6 +112,7 @@ struct ConversationView: View {
                 await appModel.loadOlderTurns(threadId: key)
             }
         )
+        .equatable()
         .overlay(alignment: .bottomLeading) {
             if let onTypingTap,
                minigameOverlay == .idle,
@@ -589,7 +590,24 @@ private struct ConversationScrollLayout: Equatable {
     let viewportHeight: CGFloat
 }
 
-struct ConversationMessageList: View {
+struct ConversationMessageList: View, Equatable {
+    /// The draft belongs to the composer, not the transcript. When SwiftUI
+    /// evaluates ConversationView for each keystroke, don't recursively diff
+    /// a long transcript unless its render digest or one of its presentation
+    /// inputs actually changed. Local @State and @AppStorage invalidations
+    /// inside this view still refresh it independently.
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.activeThreadKey == rhs.activeThreadKey &&
+        lhs.transcriptRenderDigest == rhs.transcriptRenderDigest &&
+        lhs.threadStatus == rhs.threadStatus &&
+        lhs.threadHasServerData == rhs.threadHasServerData &&
+        lhs.sendScrollToken == rhs.sendScrollToken &&
+        lhs.agentDirectoryVersion == rhs.agentDirectoryVersion &&
+        lhs.topInset == rhs.topInset &&
+        lhs.olderTurnsCursor == rhs.olderTurnsCursor &&
+        lhs.initialTurnsLoaded == rhs.initialTurnsLoaded
+    }
+
     let items: [ConversationItem]
     let threadStatus: ConversationStatus
     let threadHasServerData: Bool
