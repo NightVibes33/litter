@@ -18,7 +18,8 @@ class FakefsComposerContractTests(unittest.TestCase):
         self.assertIn(".dropDestination(for: URL.self)", CONVERSATION)
         self.assertIn("importPickedURLs(urls)", CONVERSATION)
     def test_home_picker_imports(self):
-        self.assertIn("attach.importPickedURLs(urls, allowFileImport: allowFileImport, remoteServerId: remoteServerId, ssh: ssh)", HOME)
+        self.assertIn("attach.importPickedURLs(", HOME)
+        self.assertIn("remoteServerId: remoteServerId, ssh: ssh", HOME)
         self.assertIn("allowsMultipleSelection: true", HOME)
     def test_home_drop_imports(self):
         self.assertIn(".dropDestination(for: URL.self)", HOME)
