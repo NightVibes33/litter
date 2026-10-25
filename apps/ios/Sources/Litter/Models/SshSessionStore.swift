@@ -10,10 +10,6 @@ actor SshSessionStore {
         sessionIdsByServerId[serverId] = sessionId
     }
 
-    func sessionId(for serverId: String) -> String? {
-        sessionIdsByServerId[serverId]
-    }
-
     func clear(serverId: String) {
         LLog.trace("ssh", "clear SSH session", fields: ["serverId": serverId])
         sessionIdsByServerId.removeValue(forKey: serverId)
