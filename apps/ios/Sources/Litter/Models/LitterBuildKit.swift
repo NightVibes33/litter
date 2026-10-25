@@ -339,17 +339,18 @@ struct LitterBuildKitStatus: Equatable, Sendable {
 actor LitterBuildKit {
     static let shared = LitterBuildKit()
 
-    private static let stateRoot = "/root/.litter/buildkit"
+    private static let stateRoot = IshFS.buildKitRoot
     private static let requestRoot = "\(stateRoot)/requests"
-    private static let buildRoot = "/root/.litter/builds"
+    private static let buildRoot = IshFS.buildsRoot
     private static var kittyStoreSourceURL: String { AppReleaseSource.current.stableSourceURLString }
     private static var kittyStoreUpdateURL: String { AppReleaseSource.current.stableUpdateURLString }
     private static let shimInstallMarker = "\(stateRoot)/shims-installed-v8"
-    private static let canonicalCommandNames = [
+    private static let legacyCommandNames = [
         "litter-buildkit",
         "litter-nyxian-status",
         "litter-kittystore",
         "litter-kittystore-status",
+        "litter-kittystore-config",
         "litter-kittystore-source",
         "litter-kittystore-versions",
         "litter-kittystore-validate-profile",
@@ -375,6 +376,11 @@ actor LitterBuildKit {
         "litter-build-status",
         "litter-build-cancel"
     ]
+    /// Public Alley Cat shims are installed alongside the historical aliases.
+    /// The driver still accepts original command IDs after dispatch mapping.
+    private static var canonicalCommandNames: [String] {
+        legacyCommandNames.map { $0.replacingOccurrences(of: "litter-", with: "alleycat-") }
+    }
     private static let nativeCompatibilityCommandNames = [
         "swift",
         "swiftc",
@@ -404,7 +410,7 @@ actor LitterBuildKit {
         "lipo"
     ]
     private static var commandNames: [String] {
-        let base = canonicalCommandNames + nativeCompatibilityCommandNames + passThroughCommandNames
+        let base = canonicalCommandNames + legacyCommandNames + nativeCompatibilityCommandNames + passThroughCommandNames
         #if LITTER_APP_STORE_SAFE
         return base
         #else
@@ -633,7 +639,7 @@ actor LitterBuildKit {
             buildKitRoot: Self.buildKitRoot.path,
             availableStorageBytes: Self.availableStorageBytes(at: Self.documentsRoot),
             availableStorageDetail: Self.availableStorageDetail(at: Self.documentsRoot),
-            commands: Self.commandNames,
+            commands: Self.commandNames.filter { !$0.hasPrefix("litter-") },
             assetManifest: manifest,
             sourceImportManifest: sourceManifest
         )
@@ -722,6 +728,10 @@ actor LitterBuildKit {
     }
 
     private func handle(command: String, args: String, cwd: String, buildDir: String) async -> BuildKitCommandResult {
+        // Preserve native driver IDs while accepting the Alley Cat CLI.
+        let command = command.hasPrefix("alleycat-")
+            ? "litter-" + String(command.dropFirst("alleycat-".count))
+            : command
         switch command {
         case "litter-buildkit":
             let current = await status()
@@ -916,7 +926,7 @@ actor LitterBuildKit {
         let tokens = Self.shellWords(args)
         if tokens.contains("--help") || tokens.contains("-help") {
             let usage = """
-            Usage: litter-kittystore-config [--json] [--repo owner/repo] [--owner owner --repository repo] [--manifest-asset litter-update.json] [--source-asset litter-altstore-source.json] [--stable-tag app-source] [--tag-prefix litter-v] [--reset]
+            Usage: alleycat-kittystore-config [--json] [--repo owner/repo] [--owner owner --repository repo] [--manifest-asset litter-update.json] [--source-asset litter-altstore-source.json] [--stable-tag app-source] [--tag-prefix litter-v] [--reset]
             Configures the KittyStore release/source repository at runtime for bots and rebranded builds.
             """
             return BuildKitCommandResult(exitCode: 0, status: "kittystore-config-help", log: usage + "\n")
@@ -971,7 +981,7 @@ actor LitterBuildKit {
     private func kittyStoreSource(args: String) async -> BuildKitCommandResult {
         let tokens = Self.shellWords(args)
         if tokens.contains("--help") || tokens.contains("-help") {
-            return BuildKitCommandResult(exitCode: 0, status: "kittystore-source-help", log: "Usage: litter-kittystore-source [--url] [--out /root/source.json]\nFetches the KittyStore AltStore-compatible source JSON for bots.\n")
+            return BuildKitCommandResult(exitCode: 0, status: "kittystore-source-help", log: "Usage: alleycat-kittystore-source [--url] [--out /root/source.json]\nFetches the KittyStore AltStore-compatible source JSON for bots.\n")
         }
         if tokens.contains("--url") {
             return BuildKitCommandResult(exitCode: 0, status: "kittystore-source-url", log: Self.kittyStoreSourceURL + "\n")
@@ -1000,7 +1010,7 @@ actor LitterBuildKit {
     private func kittyStoreVersions(args: String) async -> BuildKitCommandResult {
         let tokens = Self.shellWords(args)
         if tokens.contains("--help") || tokens.contains("-help") {
-            return BuildKitCommandResult(exitCode: 0, status: "kittystore-versions-help", log: "Usage: litter-kittystore-versions [--out /root/versions.json]\nPrints normalized KittyStore version history JSON for bots.\n")
+            return BuildKitCommandResult(exitCode: 0, status: "kittystore-versions-help", log: "Usage: alleycat-kittystore-versions [--out /root/versions.json]\nPrints normalized KittyStore version history JSON for bots.\n")
         }
         guard let url = URL(string: Self.kittyStoreSourceURL) else {
             return BuildKitCommandResult(exitCode: 70, status: "kittystore-source-url-invalid", log: "Invalid KittyStore source URL.\n")
@@ -1046,7 +1056,7 @@ actor LitterBuildKit {
     private func kittyStoreValidateProfile(args: String, cwd: String) async -> BuildKitCommandResult {
         let tokens = Self.shellWords(args)
         if tokens.isEmpty || tokens.contains("--help") || tokens.contains("-help") {
-            return BuildKitCommandResult(exitCode: tokens.isEmpty ? 64 : 0, status: "kittystore-profile-help", log: "Usage: litter-kittystore-validate-profile --profile /root/App.mobileprovision [--bundle-id com.example.app] [--require-certificate-match]\nValidates a provisioning profile for KittyStore certificate signing.\n")
+            return BuildKitCommandResult(exitCode: tokens.isEmpty ? 64 : 0, status: "kittystore-profile-help", log: "Usage: alleycat-kittystore-validate-profile --profile /root/App.mobileprovision [--bundle-id com.example.app] [--require-certificate-match]\nValidates a provisioning profile for KittyStore certificate signing.\n")
         }
         guard let profile = Self.optionValue(tokens: tokens, names: ["--profile", "--mobileprovision"]) else {
             return BuildKitCommandResult(exitCode: 64, status: "kittystore-profile-missing", log: "Missing --profile /root/App.mobileprovision\n")
@@ -1390,7 +1400,7 @@ actor LitterBuildKit {
     private func kittyStoreSign(args: String, cwd: String, buildDir: String) async -> BuildKitCommandResult {
         let tokens = Self.shellWords(args)
         if tokens.isEmpty || tokens.contains("--help") || tokens.contains("-help") {
-            return BuildKitCommandResult(exitCode: tokens.isEmpty ? 64 : 0, status: "kittystore-sign-help", log: "Usage: litter-kittystore-sign --plan /root/plan.json [--out /root/Signed.ipa]\nStages the plan and runs the Feather Zsign-backed native signer.\n")
+            return BuildKitCommandResult(exitCode: tokens.isEmpty ? 64 : 0, status: "kittystore-sign-help", log: "Usage: alleycat-kittystore-sign --plan /root/plan.json [--out /root/Signed.ipa]\nStages the plan and runs the Feather Zsign-backed native signer.\n")
         }
         let planPath = Self.optionValue(tokens: tokens, names: ["--plan"]).map { Self.resolveFakefsPath($0, cwd: cwd) } ?? tokens.first(where: { !$0.hasPrefix("-") }).map { Self.resolveFakefsPath($0, cwd: cwd) }
         guard let planPath else {
@@ -1501,7 +1511,7 @@ actor LitterBuildKit {
     private func kittyStoreInstalledApps(args: String, cwd: String) async -> BuildKitCommandResult {
         let tokens = Self.shellWords(args)
         if tokens.contains("--help") || tokens.contains("-help") {
-            return BuildKitCommandResult(exitCode: 0, status: "kittystore-installed-help", log: "Usage: litter-kittystore-installed --pairing /root/device.mobiledevicepairing\nLists user-installed apps through the vendored SideStore minimuxer installation_proxy browse path.\n")
+            return BuildKitCommandResult(exitCode: 0, status: "kittystore-installed-help", log: "Usage: alleycat-kittystore-installed --pairing /root/device.mobiledevicepairing\nLists user-installed apps through the vendored SideStore minimuxer installation_proxy browse path.\n")
         }
         let current = await status(checkRevocation: false)
         let explicitPairing = Self.optionValue(tokens: tokens, names: ["--pairing", "--pairing-file"])
@@ -1559,7 +1569,7 @@ actor LitterBuildKit {
     private func kittyStoreRemove(args: String, cwd: String) async -> BuildKitCommandResult {
         let tokens = Self.shellWords(args)
         if tokens.contains("--help") || tokens.contains("-help") {
-            return BuildKitCommandResult(exitCode: 0, status: "kittystore-remove-help", log: "Usage: litter-kittystore-remove --bundle-id com.example.app --pairing /root/device.mobiledevicepairing\nRemoves an installed app through the vendored SideStore minimuxer transport.\n")
+            return BuildKitCommandResult(exitCode: 0, status: "kittystore-remove-help", log: "Usage: alleycat-kittystore-remove --bundle-id com.example.app --pairing /root/device.mobiledevicepairing\nRemoves an installed app through the vendored SideStore minimuxer transport.\n")
         }
         let current = await status(checkRevocation: true)
         let explicitPairing = Self.optionValue(tokens: tokens, names: ["--pairing", "--pairing-file"])
@@ -1629,15 +1639,15 @@ actor LitterBuildKit {
             check "/dev/null char device" "[ -c /dev/null ]"
             check "/dev/random char device" "[ -c /dev/random ]"
             check "/dev/urandom char device" "[ -c /dev/urandom ]"
-            check "/tmp writable" 't=$(mktemp /tmp/litter.XXXXXX) && rm -f "$t"'
+            check "/tmp writable" 't=$(mktemp /tmp/alleycat.XXXXXX) && rm -f "$t"'
             check "/usr/local/bin writable" "[ -w /usr/local/bin ]"
-            check "/root/.litter/builds writable" "[ -w /root/.litter/builds ]"
+            check "/root/.alleycat/builds writable" "[ -w /root/.alleycat/builds ]"
             check "/root/alley-cat visible" "[ -d /root/alley-cat ] && cd /root/alley-cat"
             for tool in \(Self.commandNames.joined(separator: " ")) git ssh scp curl tar gzip unzip zip base64 python3 pip3 node npm make jq; do
               if command -v "$tool" >/dev/null 2>&1; then echo "ok  command:$tool $(command -v "$tool")"; else echo "miss command:$tool"; fi
             done
             if command -v git >/dev/null 2>&1; then
-              tmp=$(mktemp -d /tmp/litter-git.XXXXXX)
+              tmp=$(mktemp -d /tmp/alleycat-git.XXXXXX)
               if git -C "$tmp" init >/dev/null 2>&1; then echo "ok  git temp files"; else echo "bad git temp files"; ok=0; fi
               rm -rf "$tmp"
             else
@@ -1687,7 +1697,7 @@ actor LitterBuildKit {
         let bootstrap = await IshFS.run(
             """
             set -eu
-            mkdir -p /root/bin /root/alley-cat /root/litter /root/projects /root/.cache/litter /root/.litter/buildkit/requests /root/.litter/builds /tmp
+            mkdir -p /root/bin /root/alley-cat /root/projects /root/.cache/alleycat /root/.alleycat/attachments /root/.alleycat/buildkit/requests /root/.alleycat/builds /tmp
             chmod 1777 /tmp /var/tmp 2>/dev/null || true
             if command -v apk >/dev/null 2>&1; then
               apk update || true
@@ -1695,9 +1705,9 @@ actor LitterBuildKit {
             fi
             git config --global init.defaultBranch main 2>/dev/null || true
             git config --global advice.detachedHead false 2>/dev/null || true
-            cat > /root/.litter-fakefs-version <<'EOF'
-            litter-fakefs-dev-bootstrap=1
-            layout=/root,/root/alley-cat,/root/projects,/root/.litter/builds,/root/.cache/litter,/usr/local/bin
+            cat > /root/.alleycat-fakefs-version <<'EOF'
+            alleycat-fakefs-dev-bootstrap=1
+            layout=/root,/root/alley-cat,/root/projects,/root/.alleycat/builds,/root/.cache/alleycat,/usr/local/bin
             EOF
             echo "Bootstrap complete."
             """
@@ -1720,7 +1730,7 @@ actor LitterBuildKit {
     private func swiftCheck(args: String, cwd: String, buildDir: String) async -> BuildKitCommandResult {
         let tokens = Self.shellWords(args)
         guard let first = tokens.first else {
-            return BuildKitCommandResult(exitCode: 64, status: "missing-input", log: "Usage: litter-swift-check path/to/File.swift\n")
+            return BuildKitCommandResult(exitCode: 64, status: "missing-input", log: "Usage: alleycat-swift-check path/to/File.swift\n")
         }
         let path = first.hasPrefix("/") ? first : "\(cwd)/\(first)"
         let source: String
@@ -2099,7 +2109,7 @@ actor LitterBuildKit {
                 exec "$candidate" \(quotedArgs)
               fi
             done
-            echo "\(command) is not available in fakefs. Run litter-dev-bootstrap to install iSH utility packages, or use the BuildKit native compiler commands for iOS artifacts."
+            echo "\(command) is not available in fakefs. Run alleycat-dev-bootstrap to install iSH utility packages, or use the BuildKit native compiler commands for iOS artifacts."
             exit 127
             """
         )
@@ -3357,6 +3367,7 @@ actor LitterBuildKit {
     }
 
     private static let defaultPairingFileCandidates = [
+        "/root/.alleycat/kittystore/pairing/ALTPairingFile.mobiledevicepairing",
         "/root/.litter/kittystore/pairing/ALTPairingFile.mobiledevicepairing",
         "/root/ALTPairingFile.mobiledevicepairing",
         "/root/pairingFile.plist"
@@ -3982,10 +3993,10 @@ actor LitterBuildKit {
         output += "- Driver mode: \(status.assetManifest?.toolchain.nativeDriverMode ?? "unknown")\n"
         output += "- Capabilities: \(status.installedCapabilities.isEmpty ? "none" : status.installedCapabilities.joined(separator: ", "))\n"
         output += "\nBot path examples:\n"
-        output += "- litter-swift-selftest\n"
-        output += "- litter-swift-check /root/projects/App/Sources/App.swift\n"
-        output += "- litter-swift-build /root/projects/App/LitterBuild.json\n"
-        output += "- litter-ipa-build /root/projects/App/LitterBuild.json\n"
+        output += "- alleycat-swift-selftest\n"
+        output += "- alleycat-swift-check /root/projects/App/Sources/App.swift\n"
+        output += "- alleycat-swift-build /root/projects/App/LitterBuild.json\n"
+        output += "- alleycat-ipa-build /root/projects/App/LitterBuild.json\n"
         return output
     }
 
@@ -4007,10 +4018,10 @@ actor LitterBuildKit {
         """
         #!/bin/sh
         set -eu
-        default_root=/root/.litter/buildkit
-        root=${LITTER_BUILDKIT_ROOT:-$default_root}
+        default_root=/root/.alleycat/buildkit
+        root=${ALLEYCAT_BUILDKIT_ROOT:-${LITTER_BUILDKIT_ROOT:-$default_root}}
         requests="$root/requests"
-        builds=${LITTER_BUILDKIT_BUILDS:-/root/.litter/builds}
+        builds=${ALLEYCAT_BUILDKIT_BUILDS:-${LITTER_BUILDKIT_BUILDS:-/root/.alleycat/builds}}
         mkdir -p "$requests" "$builds" "$default_root"
         if [ "$root" != "$default_root" ]; then
           printf '%s\n' "$root" >> "$default_root/active-roots.txt"
@@ -4031,7 +4042,7 @@ actor LitterBuildKit {
           done
           printf '\\n'
         }
-        if [ "$cmd" = "litter-build-status" ]; then
+        if [ "$cmd" = "alleycat-build-status" ] || [ "$cmd" = "litter-build-status" ]; then
           if [ "${1:-}" = "" ]; then
             find "$builds" -maxdepth 2 -name status.txt -print 2>/dev/null | sort | tail -n 20
             exit 0
@@ -4042,7 +4053,7 @@ actor LitterBuildKit {
           exit 0
         fi
         wait_for_result=1
-        timeout="${LITTER_BUILDKIT_TIMEOUT:-120}"
+        timeout="${ALLEYCAT_BUILDKIT_TIMEOUT:-${LITTER_BUILDKIT_TIMEOUT:-120}}"
         while [ "$#" -gt 0 ]; do
           case "$1" in
             --no-wait)
@@ -4073,7 +4084,7 @@ actor LitterBuildKit {
         } > "$req"
         if [ "$wait_for_result" -eq 0 ]; then
           echo "Queued Alley Cãt BuildKit request: $id"
-          echo "Status: litter-build-status $id"
+          echo "Status: alleycat-build-status $id"
           echo "Log: $builds/$id/log.txt"
           exit 0
         fi
