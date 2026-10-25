@@ -1493,6 +1493,9 @@ mod mobile_client_tests {
                             }))
                         }
                     }
+                    upstream::ClientRequest::ThreadTurnsList { .. } => {
+                        Ok(json!({ "data": [], "nextCursor": null, "backwardsCursor": null }))
+                    }
                     other => Err(RpcError::Deserialization(format!(
                         "unexpected request in test: {}",
                         other.method_name()
@@ -1557,7 +1560,7 @@ mod mobile_client_tests {
             .expect("request log lock should not be poisoned");
         assert_eq!(
             requests.as_slice(),
-            ["thread/resume", "thread/resume", "turn/start", "thread/resume", "turn/start"],
+            ["thread/resume", "thread/resume", "turn/start", "thread/resume", "thread/turns/list", "turn/start"],
             "resume known unload and retry once after definitive thread-not-found"
         );
     }
@@ -2396,6 +2399,346 @@ mod mobile_client_tests {
             captured.len(),
             1,
             "duplicate steer taps should not fan out to multiple TurnSteer calls"
+        );
+        let upstream::ClientRequest::TurnSteer { params, .. } = &captured[0] else {
+            panic!("expected a real turn/steer request");
+        };
+        assert_eq!(params.expected_turn_id, "turn-active");
+        assert_eq!(params.thread_id, thread_id);
+        assert!(
+            client
+                .snapshot_thread(&key)
+                .unwrap()
+                .queued_follow_up_drafts
+                .is_empty()
+        );
+    }
+
+    fn queued_steer_fixture(active: bool) -> (MobileClient, ThreadKey, String) {
+        let client = MobileClient::new();
+        let key = ThreadKey {
+            server_id: "srv".into(),
+            thread_id: "thread-1".into(),
+        };
+        let config = make_server_config(&key.server_id);
+        client
+            .app_store
+            .upsert_server(&config, ServerHealthSnapshot::Connected);
+        let mut thread =
+            thread_snapshot_with_active_turn(&key.server_id, &key.thread_id, "turn-active");
+        if !active {
+            thread.active_turn_id = None;
+            thread.info.status = ThreadSummaryStatus::Idle;
+        }
+        let draft = queued_follow_up_draft_from_inputs(
+            &[
+                upstream::UserInput::Text {
+                    text: "Inspect the attached ZIP now".into(),
+                    text_elements: vec![],
+                },
+                upstream::UserInput::Skill {
+                    name: "repo-helper".into(),
+                    path: PathBuf::from("/root/helper/SKILL.md"),
+                },
+                upstream::UserInput::Mention {
+                    name: "Project.zip".into(),
+                    path: "/root/.alleycat/attachments/Project.zip".into(),
+                },
+            ],
+            AppQueuedFollowUpKind::Message,
+        )
+        .unwrap();
+        let id = draft.preview.id.clone();
+        thread.queued_follow_up_drafts.push(draft);
+        client.app_store.upsert_thread_snapshot(thread);
+        (client, key, id)
+    }
+
+    fn install_steer_test_handler(client: &MobileClient, handler: TestRequestHandler) {
+        let session = Arc::new(ServerSession::test_stub_with_handlers(
+            make_server_config("srv"),
+            Some(handler),
+            None,
+            None,
+        ));
+        client
+            .sessions
+            .write()
+            .unwrap()
+            .insert("srv".into(), session);
+    }
+
+    #[tokio::test]
+    async fn unacknowledged_steer_survives_completion_and_can_be_manually_retried() {
+        let (client, key, id) = queued_steer_fixture(true);
+        let original = client
+            .snapshot_thread(&key)
+            .unwrap()
+            .queued_follow_up_drafts[0]
+            .inputs
+            .clone();
+        let store = Arc::clone(&client.app_store);
+        let request_key = key.clone();
+        let expected_inputs = original.clone();
+        let calls = Arc::new(StdMutex::new(Vec::new()));
+        let captured = Arc::clone(&calls);
+        install_steer_test_handler(
+            &client,
+            Arc::new(move |request| {
+                captured
+                    .lock()
+                    .unwrap()
+                    .push(request.method_name().to_string());
+                match request {
+                    upstream::ClientRequest::TurnSteer { params, .. } => {
+                        assert_eq!(params.input, expected_inputs);
+                        // Completion arrives before the timeout. The message must
+                        // survive and must not be automatically delivered twice.
+                        store.apply_ui_event(&UiEvent::TurnCompleted {
+                            key: request_key.clone(),
+                            turn_id: "turn-active".into(),
+                            error: None,
+                        });
+                        assert_eq!(
+                            store
+                                .thread_snapshot(&request_key)
+                                .unwrap()
+                                .queued_follow_up_drafts
+                                .len(),
+                            1
+                        );
+                        assert!(
+                            store
+                                .claim_first_queued_follow_up_draft(&request_key)
+                                .is_none()
+                        );
+                        Err(RpcError::Deserialization("request timed out".into()))
+                    }
+                    upstream::ClientRequest::TurnStart { params, .. } => {
+                        assert_eq!(params.input, expected_inputs);
+                        Ok(
+                            json!({"turn":{"id":"turn-next","items":[],"status":"inProgress",
+                        "error":null,"startedAt":null,"completedAt":null,"durationMs":null}}),
+                        )
+                    }
+                    other => panic!("unexpected request: {}", other.method_name()),
+                }
+            }),
+        );
+        assert!(client.steer_queued_follow_up(&key, &id).await.is_err());
+        let failed = client.snapshot_thread(&key).unwrap();
+        assert_eq!(
+            failed.queued_follow_up_drafts[0].preview.kind,
+            AppQueuedFollowUpKind::Message
+        );
+        assert_eq!(failed.queued_follow_up_drafts[0].inputs, original);
+        assert!(failed.queued_follow_up_drafts[0].requires_manual_retry);
+        assert!(
+            client
+                .app_store
+                .claim_first_queued_follow_up_draft(&key)
+                .is_none()
+        );
+        client.steer_queued_follow_up(&key, &id).await.unwrap();
+        assert!(
+            client
+                .snapshot_thread(&key)
+                .unwrap()
+                .queued_follow_up_drafts
+                .is_empty()
+        );
+        assert_eq!(*calls.lock().unwrap(), vec!["turn/steer", "turn/start"]);
+    }
+
+    #[tokio::test]
+    async fn queued_steer_after_task_ends_starts_one_turn() {
+        let (client, key, id) = queued_steer_fixture(false);
+        let calls = Arc::new(StdMutex::new(0));
+        let captured = Arc::clone(&calls);
+        install_steer_test_handler(
+            &client,
+            Arc::new(move |request| {
+                assert!(matches!(request, upstream::ClientRequest::TurnStart { .. }));
+                *captured.lock().unwrap() += 1;
+                Ok(
+                    json!({"turn":{"id":"turn-next","items":[],"status":"inProgress",
+                "error":null,"startedAt":null,"completedAt":null,"durationMs":null}}),
+                )
+            }),
+        );
+        client.steer_queued_follow_up(&key, &id).await.unwrap();
+        client.steer_queued_follow_up(&key, &id).await.unwrap();
+        assert_eq!(*calls.lock().unwrap(), 1);
+        assert!(
+            client
+                .snapshot_thread(&key)
+                .unwrap()
+                .queued_follow_up_drafts
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn steer_definitively_rejected_after_completion_starts_follow_up_once() {
+        let (client, key, id) = queued_steer_fixture(true);
+        let store = Arc::clone(&client.app_store);
+        let request_key = key.clone();
+        let calls = Arc::new(StdMutex::new(Vec::new()));
+        let captured = Arc::clone(&calls);
+        install_steer_test_handler(
+            &client,
+            Arc::new(move |request| {
+                captured
+                    .lock()
+                    .unwrap()
+                    .push(request.method_name().to_string());
+                match request {
+                    upstream::ClientRequest::TurnSteer { .. } => {
+                        store.apply_ui_event(&UiEvent::TurnCompleted {
+                            key: request_key.clone(),
+                            turn_id: "turn-active".into(),
+                            error: None,
+                        });
+                        Err(RpcError::Deserialization(
+                            "server error -32600: no active turn to steer".into(),
+                        ))
+                    }
+                    upstream::ClientRequest::TurnStart { .. } => Ok(json!({
+                        "turn":{"id":"turn-next","items":[],"status":"inProgress",
+                            "error":null,"startedAt":null,"completedAt":null,"durationMs":null}
+                    })),
+                    other => panic!("unexpected request: {}", other.method_name()),
+                }
+            }),
+        );
+        client.steer_queued_follow_up(&key, &id).await.unwrap();
+        assert_eq!(*calls.lock().unwrap(), vec!["turn/steer", "turn/start"]);
+        assert!(
+            client
+                .snapshot_thread(&key)
+                .unwrap()
+                .queued_follow_up_drafts
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn cancelled_steer_restores_only_its_draft_without_autosending() {
+        let (client, key, id) = queued_steer_fixture(true);
+        let (_, target) = client
+            .app_store
+            .try_begin_steer_queued_follow_up(&key, &id)
+            .unwrap();
+        assert_eq!(target.as_deref(), Some("turn-active"));
+        assert!(
+            client
+                .app_store
+                .try_begin_steer_queued_follow_up(&key, &id)
+                .is_none()
+        );
+        let command_id = client.app_store.begin_server_mutating_command(
+            &key.server_id,
+            ServerMutatingCommandKind::SteerQueuedFollowUp,
+            &key.thread_id,
+        );
+        let submission = QueuedFollowUpSubmission {
+            store: Arc::clone(&client.app_store),
+            key: key.clone(),
+            preview_id: id,
+            command_id,
+            completed: false,
+        };
+        let next = queued_follow_up_draft_from_inputs(
+            &[upstream::UserInput::Text {
+                text: "Keep the next message".into(),
+                text_elements: vec![],
+            }],
+            AppQueuedFollowUpKind::Message,
+        )
+        .unwrap();
+        let next_id = next.preview.id.clone();
+        client.app_store.enqueue_thread_follow_up_draft(&key, next);
+        drop(submission); // Same cleanup path as dropping an in-flight future.
+        let thread = client.snapshot_thread(&key).unwrap();
+        assert_eq!(thread.queued_follow_up_drafts.len(), 2);
+        assert_eq!(
+            thread.queued_follow_up_drafts[0].preview.kind,
+            AppQueuedFollowUpKind::Message
+        );
+        assert!(thread.queued_follow_up_drafts[0].requires_manual_retry);
+        assert_eq!(thread.queued_follow_up_drafts[1].preview.id, next_id);
+        assert!(
+            client
+                .app_store
+                .claim_first_queued_follow_up_draft(&key)
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn accepted_steer_does_not_get_stuck_if_completion_precedes_ack() {
+        let (client, key, id) = queued_steer_fixture(true);
+        client.app_store.enqueue_thread_follow_up_draft(
+            &key,
+            queued_follow_up_draft_from_inputs(
+                &[upstream::UserInput::Text {
+                    text: "Next message".into(),
+                    text_elements: vec![],
+                }],
+                AppQueuedFollowUpKind::Message,
+            )
+            .unwrap(),
+        );
+        let store = Arc::clone(&client.app_store);
+        let request_key = key.clone();
+        let calls = Arc::new(StdMutex::new(Vec::new()));
+        let captured = Arc::clone(&calls);
+        install_steer_test_handler(
+            &client,
+            Arc::new(move |request| {
+                captured
+                    .lock()
+                    .unwrap()
+                    .push(request.method_name().to_string());
+                match request {
+                    upstream::ClientRequest::TurnSteer { .. } => {
+                        store.apply_ui_event(&UiEvent::TurnCompleted {
+                            key: request_key.clone(),
+                            turn_id: "turn-active".into(),
+                            error: None,
+                        });
+                        assert!(
+                            store
+                                .claim_first_queued_follow_up_draft(&request_key)
+                                .is_none()
+                        );
+                        Ok(json!({"turnId":"turn-active"}))
+                    }
+                    upstream::ClientRequest::TurnStart { params, .. } => {
+                        assert_eq!(
+                            params.input,
+                            vec![upstream::UserInput::Text {
+                                text: "Next message".into(),
+                                text_elements: vec![],
+                            }]
+                        );
+                        Ok(
+                            json!({"turn":{"id":"turn-next","items":[],"status":"inProgress",
+                            "error":null,"startedAt":null,"completedAt":null,"durationMs":null}}),
+                        )
+                    }
+                    other => panic!("unexpected request: {}", other.method_name()),
+                }
+            }),
+        );
+        client.steer_queued_follow_up(&key, &id).await.unwrap();
+        assert_eq!(*calls.lock().unwrap(), vec!["turn/steer", "turn/start"]);
+        assert!(
+            client
+                .snapshot_thread(&key)
+                .unwrap()
+                .queued_follow_up_drafts
+                .is_empty()
         );
     }
 

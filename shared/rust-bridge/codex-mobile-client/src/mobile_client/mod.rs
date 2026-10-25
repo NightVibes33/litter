@@ -52,6 +52,27 @@ pub use self::thread_projection::{
     reconcile_active_turn, thread_info_from_upstream_thread,
     thread_snapshot_from_upstream_thread_with_overrides,
 };
+
+/// A cancelled or failed RPC must not strand a queued message in "sending".
+/// Successful acknowledgement removes the draft, making this rollback a no-op.
+struct QueuedFollowUpSubmission {
+    store: Arc<AppStoreReducer>,
+    key: ThreadKey,
+    preview_id: String,
+    command_id: String,
+    completed: bool,
+}
+
+impl Drop for QueuedFollowUpSubmission {
+    fn drop(&mut self) {
+        if !self.completed {
+            self.store
+                .finish_server_mutating_command_failure(&self.key.server_id, &self.command_id);
+            self.store
+                .restore_submitting_follow_up(&self.key, &self.preview_id);
+        }
+    }
+}
 /// Top-level entry point for platform code (iOS / Android).
 ///
 /// Ties together server sessions, thread management, event processing,
@@ -3826,51 +3847,59 @@ impl MobileClient {
         Ok(())
     }
 
+    /// Starting/steering a queued message waits for acceptance, not for the
+    /// model to finish. Bound that acknowledgement even on local transports.
+    async fn request_follow_up_ack<R>(
+        &self,
+        server_id: &str,
+        request: upstream::ClientRequest,
+    ) -> Result<R, String>
+    where
+        R: serde::de::DeserializeOwned,
+    {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            self.request_typed_for_server(server_id, request),
+        )
+        .await
+        .map_err(|_| "Could not confirm message delivery. Your message is saved; check the chat before retrying.".to_string())?
+    }
+
     pub async fn steer_queued_follow_up(
         &self,
         key: &ThreadKey,
         preview_id: &str,
     ) -> Result<(), RpcError> {
         self.get_session(&key.server_id)?;
-        let thread = self.snapshot_thread(key)?;
-        if !thread
-            .queued_follow_up_drafts
-            .iter()
-            .any(|draft| draft.preview.id == preview_id)
-        {
-            return Err(RpcError::Deserialization(format!(
-                "queued follow-up not found: {preview_id}"
-            )));
-        }
-
-        // Atomically flip the draft's kind to PendingSteer. If it's already
-        // pending (concurrent/duplicate tap), drop this request so we don't
-        // fire a second steer that would inject another copy of the user
-        // message.
-        let Some((draft, _next_drafts)) = self
+        // Claim the draft and capture its target turn atomically. Repeated taps
+        // after acknowledgement are harmless, just like taps during submission.
+        let Some((draft, active_turn_id)) = self
             .app_store
             .try_begin_steer_queued_follow_up(key, preview_id)
         else {
             return Ok(());
         };
-
-        let active_turn_id = thread.active_turn_id.ok_or_else(|| {
-            RpcError::Deserialization("no active turn available to steer".to_string())
-        })?;
-
         let direct_command_id = self.app_store.begin_server_mutating_command(
             &key.server_id,
             ServerMutatingCommandKind::SteerQueuedFollowUp,
             &key.thread_id,
         );
-        if let Err(error) = self
-            .request_typed_for_server::<upstream::TurnSteerResponse>(
+        let mut submission = QueuedFollowUpSubmission {
+            store: Arc::clone(&self.app_store),
+            key: key.clone(),
+            preview_id: preview_id.to_string(),
+            command_id: direct_command_id.clone(),
+            completed: false,
+        };
+        let mut sent_as_new_turn = active_turn_id.is_none();
+        let mut result = if let Some(active_turn_id) = active_turn_id {
+            self.request_follow_up_ack::<upstream::TurnSteerResponse>(
                 &key.server_id,
                 upstream::ClientRequest::TurnSteer {
                     request_id: upstream::RequestId::Integer(crate::next_request_id()),
                     params: upstream::TurnSteerParams {
                         thread_id: key.thread_id.clone(),
-                        input: draft.inputs,
+                        input: draft.inputs.clone(),
                         responsesapi_client_metadata: None,
                         expected_turn_id: active_turn_id,
                         ..Default::default()
@@ -3878,14 +3907,69 @@ impl MobileClient {
                 },
             )
             .await
+            .map(|_| ())
+        } else {
+            // The task finished before the tap reached us. Send this exact
+            // queued message as a new turn instead of leaving it stuck.
+            self.request_follow_up_ack::<upstream::TurnStartResponse>(
+                &key.server_id,
+                upstream::ClientRequest::TurnStart {
+                    request_id: upstream::RequestId::Integer(crate::next_request_id()),
+                    params: upstream::TurnStartParams {
+                        thread_id: key.thread_id.clone(),
+                        input: draft.inputs.clone(),
+                        ..Default::default()
+                    },
+                },
+            )
+            .await
+            .map(|_| ())
+        };
+        // A definitive rejection means no input was accepted. If completion
+        // has also reached our store, safely start the follow-up once. Never
+        // apply this fallback to a timeout or a disconnect.
+        if !sent_as_new_turn
+            && result
+                .as_ref()
+                .is_err_and(|error| error.contains("no active turn to steer"))
+            && self.snapshot_thread(key)?.active_turn_id.is_none()
         {
-            self.app_store
-                .finish_server_mutating_command_failure(&key.server_id, &direct_command_id);
+            sent_as_new_turn = true;
+            result = self
+                .request_follow_up_ack::<upstream::TurnStartResponse>(
+                    &key.server_id,
+                    upstream::ClientRequest::TurnStart {
+                        request_id: upstream::RequestId::Integer(crate::next_request_id()),
+                        params: upstream::TurnStartParams {
+                            thread_id: key.thread_id.clone(),
+                            input: draft.inputs,
+                            ..Default::default()
+                        },
+                    },
+                )
+                .await
+                .map(|_| ());
+        }
+        if let Err(error) = result {
+            // The submission guard restores the message for a deliberate retry.
+            // Never auto-retry a timeout: the server may have accepted it.
             return Err(RpcError::Deserialization(error));
         }
         self.app_store
             .finish_server_mutating_command_success(&key.server_id, &direct_command_id);
-        // Keep draft visible as PendingSteer; TurnCompleted will clean it up.
+        self.app_store
+            .remove_thread_follow_up_draft(key, preview_id);
+        submission.completed = true;
+        if !sent_as_new_turn {
+            // A completion event may have arrived while the steer was being
+            // acknowledged. Resume any queue dispatch held by that submission.
+            maybe_send_next_local_queued_follow_up(
+                Arc::clone(&self.app_store),
+                Arc::clone(&self.sessions),
+                key.clone(),
+            )
+            .await;
+        }
         Ok(())
     }
 

@@ -3399,6 +3399,7 @@ struct QueuedFollowUpsPreviewView: View {
                             .frame(width: 30, height: 30)
                     }
                     .buttonStyle(.plain)
+                    .disabled(preview.kind == .retryingSteer)
                 }
                 .padding(12)
                 .background(style.background)
@@ -3445,7 +3446,7 @@ private struct QueuedFollowUpPreviewStyle {
         case .retryingSteer:
             let tint = LitterTheme.warning
             return Self(
-                title: "Retrying steer",
+                title: "Sending message…",
                 symbol: "arrow.clockwise",
                 tint: tint,
                 background: tint.opacity(0.10),

@@ -890,6 +890,7 @@ impl AppStoreReducer {
                 preview,
                 inputs: Vec::new(),
                 source_message_json: None,
+                requires_manual_retry: false,
             },
         );
     }
@@ -916,8 +917,16 @@ impl AppStoreReducer {
     ) -> Option<QueuedFollowUpDraft> {
         let draft = self
             .mutate_thread_with_result(key, |thread| {
+                if thread.active_turn_id.is_some()
+                    || thread.queued_follow_up_drafts.iter().any(|draft| {
+                        draft.preview.kind == super::snapshot::AppQueuedFollowUpKind::RetryingSteer
+                    })
+                {
+                    return None;
+                }
                 let position = thread.queued_follow_up_drafts.iter().position(|draft| {
                     draft.preview.kind == super::snapshot::AppQueuedFollowUpKind::Message
+                        && !draft.requires_manual_retry
                 })?;
                 let draft = thread.queued_follow_up_drafts.remove(position);
                 sync_thread_follow_up_projection(thread);
@@ -1126,15 +1135,15 @@ impl AppStoreReducer {
     }
 
     /// Atomically transitions a queued follow-up draft from `Message` to
-    /// `PendingSteer`. Returns the updated draft and a snapshot of the
-    /// thread's drafts in the new state on success. Returns `None` when the
+    /// `RetryingSteer` (submitting, not yet acknowledged). Captures the active
+    /// turn under the same lock as the draft claim. Returns `None` when the
     /// draft is missing or already in `PendingSteer`/`RetryingSteer` — used
     /// to drop duplicate steer taps before they reach the server.
     pub(crate) fn try_begin_steer_queued_follow_up(
         &self,
         key: &ThreadKey,
         preview_id: &str,
-    ) -> Option<(QueuedFollowUpDraft, Vec<QueuedFollowUpDraft>)> {
+    ) -> Option<(QueuedFollowUpDraft, Option<String>)> {
         let result = self
             .mutate_thread_with_result(key, |thread| {
                 let position = thread
@@ -1146,17 +1155,40 @@ impl AppStoreReducer {
                     return None;
                 }
                 thread.queued_follow_up_drafts[position].preview.kind =
-                    super::snapshot::AppQueuedFollowUpKind::PendingSteer;
+                    super::snapshot::AppQueuedFollowUpKind::RetryingSteer;
                 let updated = thread.queued_follow_up_drafts[position].clone();
-                let next = thread.queued_follow_up_drafts.clone();
+                let active_turn_id = thread.active_turn_id.clone();
                 sync_thread_follow_up_projection(thread);
-                Some((updated, next))
+                Some((updated, active_turn_id))
             })
             .flatten();
         if result.is_some() {
             self.emit_thread_metadata_changed(key);
         }
         result
+    }
+
+    /// Restore only the claimed draft; never overwrite newer queued messages
+    /// or resurrect a draft already acknowledged, echoed, or deleted.
+    pub(crate) fn restore_submitting_follow_up(&self, key: &ThreadKey, preview_id: &str) {
+        let changed = self
+            .mutate_thread_with_result(key, |thread| {
+                let Some(draft) = thread.queued_follow_up_drafts.iter_mut().find(|draft| {
+                    draft.preview.id == preview_id
+                        && draft.preview.kind
+                            == super::snapshot::AppQueuedFollowUpKind::RetryingSteer
+                }) else {
+                    return false;
+                };
+                draft.preview.kind = super::snapshot::AppQueuedFollowUpKind::Message;
+                draft.requires_manual_retry = true;
+                sync_thread_follow_up_projection(thread);
+                true
+            })
+            .unwrap_or(false);
+        if changed {
+            self.emit_thread_metadata_changed(key);
+        }
     }
 
     pub(crate) fn set_thread_follow_up_drafts(

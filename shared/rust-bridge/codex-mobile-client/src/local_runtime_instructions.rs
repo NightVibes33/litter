@@ -4,7 +4,6 @@ use crate::MobileClient;
 const IOS_LOCAL_RUNTIME_SENTINEL: &str =
     "You are running inside Alley Cat's local Codex runtime on iOS.";
 
-#[cfg(any(all(target_os = "ios", not(target_abi = "macabi")), test))]
 const LEGACY_IOS_LOCAL_RUNTIME_SENTINEL: &str =
     "You are running inside Litter's local Codex runtime on iOS.";
 

@@ -16,7 +16,16 @@ final class StreamingRendererCoordinator {
 
     // MARK: - Delta feeding
 
-    func appendDelta(_ delta: String, for itemId: String) {
+    func appendDelta(_ delta: String, for itemId: String, seedText: @autoclosure () -> String? = nil) {
+        guard !delta.isEmpty else { return }
+        if renderers[itemId] == nil {
+            // The view may not exist yet, and its snapshot can lag the token
+            // stream. Seed once from the snapshot plus its unflushed deltas,
+            // before queuing this new delta. Never buffer against an unknown
+            // baseline: a later full snapshot already contains those bytes.
+            guard let seed = seedText() else { return }
+            _ = renderer(for: itemId, currentText: seed)
+        }
         if activeItemId != itemId {
             if let oldId = activeItemId {
                 flushPendingDeltas(for: oldId)
@@ -27,16 +36,8 @@ final class StreamingRendererCoordinator {
         // Batch renderer work so streamed tokens do not compete with composer input.
         pendingDeltas[itemId, default: ""] += delta
         scheduleFlush()
-        // Only append to an existing renderer. The first delta arrives via
-        // `ThreadItemChanged` (placeholder insert) and never reaches this
-        // path — the snapshot's text is updated instead. If we lazy-created
-        // a renderer here, it would start empty and get only second-and-
-        // later deltas; SwiftUI's later rebuild of the bubble would then
-        // return that truncated renderer (its `currentText` seed is ignored
-        // when a renderer already exists), dropping the first delta.
-        // Letting this be a no-op when no renderer exists means the bubble
-        // view's init seeds the renderer from the snapshot's full text.
-        renderers[itemId]?.append(delta)
+        // Only the flush path appends. Appending here as well would render
+        // every chunk twice when the batching timer fires.
     }
 
     // MARK: - Renderer access

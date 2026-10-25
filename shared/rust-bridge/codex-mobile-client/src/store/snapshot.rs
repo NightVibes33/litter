@@ -480,6 +480,9 @@ pub(crate) struct QueuedFollowUpDraft {
     pub preview: AppQueuedFollowUpPreview,
     pub inputs: Vec<upstream::UserInput>,
     pub source_message_json: Option<serde_json::Value>,
+    /// An unacknowledged submission may have reached the server. Only an
+    /// explicit user retry may resend it; turn completion must not duplicate it.
+    pub requires_manual_retry: bool,
 }
 
 impl ThreadSnapshot {

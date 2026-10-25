@@ -1207,7 +1207,10 @@ final class AppModel {
                 // when no interval is pending (deltas can arrive for a
                 // turn this device did not start).
                 PerfTracker.endInterval("SendMessage", key: PerfTracker.intervalKey(key))
-                StreamingRendererCoordinator.shared.appendDelta(text, for: itemId)
+                StreamingRendererCoordinator.shared.appendDelta(
+                    text, for: itemId,
+                    seedText: assistantRendererSeed(key: key, itemId: itemId)
+                )
             }
             enqueueStreamingDelta(key: key, itemId: itemId, kind: kind, text: text)
         case .threadRemoved(let key, let agentDirectoryVersion):
@@ -1376,6 +1379,17 @@ final class AppModel {
             guard let self else { return }
             await self.flushPendingStreamingDeltas()
         }
+    }
+
+    /// Evaluated lazily only when a stream needs its first renderer. Include
+    /// deltas already received but not yet committed by the snapshot coalescer.
+    private func assistantRendererSeed(key: ThreadKey, itemId: String) -> String? {
+        guard let threadIndex = threadIndex(for: key),
+              let item = snapshot?.threads[threadIndex].hydratedConversationItems
+                .first(where: { $0.id == itemId }),
+              case .assistant(let message) = item.content else { return nil }
+        let batchKey = StreamingDeltaBatchKey(key: key, itemId: itemId, kind: .assistantText)
+        return message.text + (pendingStreamingDeltas[batchKey]?.text ?? "")
     }
 
     private func canApplyStreamingDelta(key: ThreadKey, itemId: String) -> Bool {

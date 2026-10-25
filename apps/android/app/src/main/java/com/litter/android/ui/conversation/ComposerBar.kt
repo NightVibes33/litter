@@ -1393,6 +1393,7 @@ private fun QueuedFollowUpCard(
 
         IconButton(
             onClick = { onDelete(preview) },
+            enabled = preview.kind != AppQueuedFollowUpKind.RETRYING_STEER,
             modifier = Modifier.size(30.dp),
         ) {
             Icon(
@@ -1425,7 +1426,7 @@ private fun queuedFollowUpUiStyle(kind: AppQueuedFollowUpKind): QueuedFollowUpUi
 
         AppQueuedFollowUpKind.RETRYING_STEER ->
             QueuedFollowUpUiStyle(
-                title = "Retrying steer",
+                title = "Sending message…",
                 tint = LitterTheme.warning,
                 background = LitterTheme.warning.copy(alpha = 0.10f),
                 border = LitterTheme.warning.copy(alpha = 0.28f),
