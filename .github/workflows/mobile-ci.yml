@@ -71,6 +71,7 @@ jobs:
           python3 -m unittest discover -s tools/scripts/tests -p 'test_composer_fakefs_contract.py'
           python3 -m unittest discover -s tools/scripts/tests -p 'test_local_attachment_probe.py'
           python3 -m unittest discover -s tools/scripts/tests -p 'test_nyxian_workspace_host_patch.py'
+          python3 -m unittest discover -s tools/scripts/tests -p 'test_nyxian_objc_ci_imports.py'
 
       - name: Run isolated encoder and download regressions
         run: |

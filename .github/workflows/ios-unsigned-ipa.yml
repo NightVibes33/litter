@@ -52,6 +52,7 @@ on:
       - 'tools/scripts/install-nyxian-toolchain-artifacts.sh'
       - 'tools/scripts/nyxian-toolchain-provenance.py'
       - 'tools/scripts/patch-emexde-generated-swift-imports-for-ios-ci.py'
+      - 'tools/scripts/patch-nyxian-objc-ci-imports.py'
       - 'tools/scripts/patch-ios-fast-device-project.py'
       - 'tools/scripts/buildkit-native-source-fingerprint.sh'
       - 'tools/scripts/upload-buildkit-assets-release.sh'
@@ -70,9 +71,9 @@ permissions:
 
 concurrency:
   group: ios-unsigned-ipa-${{ github.ref }}
-  # Do not cancel an active Rust prebuild run. New pushes still trigger CI,
-  # but they queue behind the current run so the generated Rust cache can save.
-  cancel-in-progress: false
+  # Preserve normal cache-warming runs. A repair commit may explicitly replace
+  # an older revision already known to fail, so it cannot block the repaired IPA.
+  cancel-in-progress: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[replace-broken-unsigned]') }}
 
 jobs:
   ios-code-mode-runtime:
