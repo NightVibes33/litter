@@ -374,4 +374,53 @@ final class ConversationAttachmentSupportTests: XCTestCase {
             XCTAssertTrue(error.localizedDescription.contains("missing from iSH"))
         }
     }
+
+    func testTransferredSSHZipUsesRealRemotePathInSubmittedTurn() throws {
+        let attachment = ConversationAttachment(
+            kind: .archive,
+            displayName: "GameAssets.zip",
+            detail: "SSH transfer verified",
+            remotePath: "/tmp/alleycat-attach.Abc123/GameAssets.zip",
+            remoteByteCount: 3_000_000
+        )
+        let chip = try XCTUnwrap(ConversationAttachmentSupport.composerFileChip(for: attachment))
+        XCTAssertEqual(chip.path, "/tmp/alleycat-attach.Abc123/GameAssets.zip")
+        XCTAssertNil(ConversationAttachmentSupport.localRuntimeFileAccessInput(attachments: [attachment]))
+
+        let payload = AppComposerPayload(
+            text: "Inspect these ZIP contents",
+            additionalInputs: ConversationAttachmentSupport.buildTurnInputs(attachments: [attachment]),
+            fileAttachments: [chip],
+            approvalPolicy: nil, sandboxPolicy: nil, model: nil, effort: nil, serviceTier: nil
+        )
+        XCTAssertNoThrow(try payload.validateAttachmentReferences(isLocal: false))
+        let request = payload.turnStartRequest(threadId: "ssh-thread")
+        guard case .mention(_, let uploadedPath) = request.input[1] else {
+            return XCTFail("Missing remote ZIP mention in submitted turn")
+        }
+        XCTAssertEqual(uploadedPath, "/tmp/alleycat-attach.Abc123/GameAssets.zip")
+        guard case .text(let prompt, _) = request.input[0] else {
+            return XCTFail("Missing ZIP path in visible agent request")
+        }
+        XCTAssertTrue(prompt.contains("/tmp/alleycat-attach.Abc123/GameAssets.zip"))
+        XCTAssertFalse(prompt.contains("/private/var/mobile/"))
+        XCTAssertFalse(prompt.contains("/root/.alleycat/attachments/"))
+    }
+
+    func testSSHAttachmentWithoutLiveSessionCannotBeSubmitted() async {
+        let attachment = ConversationAttachment(
+            kind: .archive,
+            displayName: "game.zip",
+            detail: "SSH transfer",
+            remotePath: "/tmp/alleycat-attach.XYZ123/game.zip",
+            remoteByteCount: 10
+        )
+        do {
+            try await ConversationAttachmentSupport.validateComposerAttachment(attachment)
+            XCTFail("Should not submit remote ZIP if the SSH session is gone")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("SSH connection"))
+        }
+    }
+
 }
