@@ -161,12 +161,13 @@ final class VoiceTranscriptionManager {
         return try JSONDecoder().decode(TranscriptionResponse.self, from: data).text
     }
 
-    private static func rms(buffer: AVAudioPCMBuffer) -> Float {
+    nonisolated private static func rms(buffer: AVAudioPCMBuffer) -> Float {
         guard let data = buffer.floatChannelData?[0] else { return 0 }
         let count = Int(buffer.frameLength)
         guard count > 0 else { return 0 }
         var sum: Float = 0
         for i in 0..<count { sum += data[i] * data[i] }
+        guard sum.isFinite else { return 0 }
         return min(sqrtf(sum / Float(count)) * 3, 1.0)
     }
 }

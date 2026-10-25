@@ -169,10 +169,18 @@ final class FileDownloadDriver: NSObject, URLSessionDownloadDelegate {
         totalBytesWritten: Int64,
         totalBytesExpectedToWrite: Int64
     ) {
+        stateLock.lock()
+        let current = self.session === session && !isCancelled
+        stateLock.unlock()
+        guard current else { return }
         progressHandler(totalBytesWritten, totalBytesExpectedToWrite)
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        stateLock.lock()
+        let current = self.session === session && !isCancelled
+        stateLock.unlock()
+        guard current else { return }
         if let response = downloadTask.response as? HTTPURLResponse,
            !(200..<300).contains(response.statusCode) {
             completedResult = .failure(NSError(domain: "FileDownloadDriver", code: response.statusCode,
@@ -194,6 +202,11 @@ final class FileDownloadDriver: NSObject, URLSessionDownloadDelegate {
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         stateLock.lock()
+        guard self.session === session else {
+            stateLock.unlock()
+            session.finishTasksAndInvalidate()
+            return
+        }
         let continuation = self.continuation
         self.continuation = nil
         self.task = nil

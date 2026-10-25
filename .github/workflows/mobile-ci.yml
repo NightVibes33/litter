@@ -75,7 +75,7 @@ jobs:
           (root / "Package.swift").write_text(
               '// swift-tools-version: 6.0\n'
               'import PackageDescription\n'
-              'let package = Package(name: "LitterAudit", targets: ['
+              'let package = Package(name: "LitterAudit", platforms: [.macOS(.v14)], targets: ['
               '.target(name: "Litter"), '
               '.testTarget(name: "LitterTests", dependencies: ["Litter"])])\n'
           )
