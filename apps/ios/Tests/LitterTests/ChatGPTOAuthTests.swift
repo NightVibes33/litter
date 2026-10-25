@@ -3,6 +3,13 @@ import XCTest
 
 @MainActor
 final class ChatGPTOAuthTests: XCTestCase {
+    func testCallbackRejectsRepeatedParametersInsteadOfTrapping() throws {
+        for query in ["code=a&state=x&state=y", "code=a&code=b&state=x", "error=a&error=b"] {
+            let url = try XCTUnwrap(URL(string: "http://127.0.0.1:1455/auth/callback?" + query))
+            XCTAssertThrowsError(try ChatGPTOAuth.validateCallbackURL(url))
+        }
+    }
+
     func testAuthorizeURLUsesFixedLocalhostRedirect() throws {
         let url = try ChatGPTOAuth.buildAuthorizeURL(
             state: "state-123",

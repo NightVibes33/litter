@@ -555,6 +555,13 @@ enum ChatGPTOAuth {
         guard let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false) else {
             throw ChatGPTOAuthError.invalidCallbackURL
         }
+        // Reject ambiguous callback parameters before constructing a lookup.
+        // Repeated state/code values must be an auth error, never a trap or
+        // an arbitrary first/last-value choice.
+        let names = (components.queryItems ?? []).map(\.name)
+        guard Set(names).count == names.count else {
+            throw ChatGPTOAuthError.invalidCallbackURL
+        }
         let isHTTP = callbackURL.scheme == "http"
         let hostMatches =
             components.host == callbackBindHost ||
@@ -923,6 +930,7 @@ private final class ChatGPTOAuthSessionRunner: NSObject, ASWebAuthenticationPres
                 do {
                     let callbackURL = try await callbackServer.waitForCallback()
                     await MainActor.run {
+                        guard !Task.isCancelled, self?.activeCallbackServer === callbackServer else { return }
                         self?.finishSuccess(
                             callbackURL: callbackURL,
                             redirectURI: redirectURI
@@ -930,6 +938,7 @@ private final class ChatGPTOAuthSessionRunner: NSObject, ASWebAuthenticationPres
                     }
                 } catch {
                     await MainActor.run {
+                        guard !Task.isCancelled, self?.activeCallbackServer === callbackServer else { return }
                         self?.finishFailure(error)
                     }
                 }
@@ -940,6 +949,7 @@ private final class ChatGPTOAuthSessionRunner: NSObject, ASWebAuthenticationPres
                 callbackURLScheme: nil
             ) { [weak self] callbackURL, error in
                 Task { @MainActor in
+                    guard self?.activeCallbackServer === callbackServer else { return }
                     self?.handleSessionCompletion(callbackURL: callbackURL, error: error)
                 }
             }
@@ -1172,18 +1182,25 @@ private final class ChatGPTOAuthLoopbackServer: @unchecked Sendable {
     }
 
     func stop() {
-        let state = withStateLock { () -> (Task<Void, Never>?, NWListener?) in
-            let state = (timeoutTask, listener)
+        let state = withStateLock { () -> (
+            Task<Void, Never>?, NWListener?, CheckedContinuation<String, Error>?, CheckedContinuation<URL, Error>?
+        ) in
+            let state = (timeoutTask, listener, startContinuation, callbackContinuation)
             timeoutTask = nil
             listener = nil
             startContinuation = nil
             callbackContinuation = nil
-            pendingCallbackResult = nil
+            // A waiter that starts after stop must receive cancellation too.
+            if pendingCallbackResult == nil {
+                pendingCallbackResult = .failure(ChatGPTOAuthError.cancelled)
+            }
             didDeliverCallback = true
             return state
         }
         state.0?.cancel()
         state.1?.cancel()
+        state.2?.resume(throwing: ChatGPTOAuthError.cancelled)
+        state.3?.resume(throwing: ChatGPTOAuthError.cancelled)
     }
 
     private func handle(_ connection: NWConnection) {

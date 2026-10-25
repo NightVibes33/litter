@@ -18,7 +18,8 @@ enum ConversationInfiniteScrollPolicy {
     ) -> Int? {
         guard !visibleIDs.isEmpty else { return nil }
         let indicesByID = Dictionary(
-            uniqueKeysWithValues: orderedIDs.enumerated().map { ($1, $0) }
+            orderedIDs.enumerated().map { ($1, $0) },
+            uniquingKeysWith: { first, _ in first }
         )
         return visibleIDs.compactMap { indicesByID[$0] }.min()
     }
@@ -156,7 +157,7 @@ struct TranscriptTurn: Identifiable, Equatable {
         in nextTurns: [TranscriptTurn],
         from previousTurns: [TranscriptTurn]
     ) -> [TranscriptTurn] {
-        let previous = Dictionary(uniqueKeysWithValues: previousTurns.map { ($0.id, $0.isCollapsedByDefault) })
+        let previous = Dictionary(previousTurns.map { ($0.id, $0.isCollapsedByDefault) }, uniquingKeysWith: { first, _ in first })
         let matches = previousTurnIDs(in: nextTurns, from: previousTurns)
         return nextTurns.map { turn in
             guard let oldID = matches[turn.id], let wasCollapsed = previous[oldID] else { return turn }

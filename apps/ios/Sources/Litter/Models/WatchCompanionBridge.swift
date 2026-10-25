@@ -207,7 +207,7 @@ final class WatchCompanionBridge: NSObject {
         let pending = AppModel.shared.snapshot?.pendingApprovals ?? []
         let summaries = AppModel.shared.snapshot?.sessionSummaries ?? []
         let summaryByKey = Dictionary(
-            uniqueKeysWithValues: summaries.map { ($0.key, $0) }
+            summaries.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first }
         )
         let currentIds = Set(pending.map(\.id))
 

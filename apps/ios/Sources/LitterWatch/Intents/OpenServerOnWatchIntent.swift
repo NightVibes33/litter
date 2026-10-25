@@ -20,7 +20,7 @@ struct WatchServerEntityQuery: EntityQuery {
     @MainActor
     func entities(for identifiers: [WatchServerEntity.ID]) async throws -> [WatchServerEntity] {
         let lookup = Dictionary(
-            uniqueKeysWithValues: allServers().map { ($0.id, $0) }
+            allServers().map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
         )
         return identifiers.compactMap { lookup[$0] }
     }

@@ -42,6 +42,13 @@ final class AppRuntimeController {
     /// Best-effort graceful shutdown of the iroh endpoint. Wired from
     /// `applicationWillTerminate` on Catalyst (NSApplicationDelegate
     /// fires this reliably; iOS proper does not on swipe-up-to-kill).
+    func beginAlleycatEndpointShutdown() {
+        guard let client = appModel?.client else { return }
+        Task.detached(priority: .utility) {
+            await client.shutdownAlleycatEndpoint()
+        }
+    }
+
     func shutdownAlleycatEndpoint() async {
         guard let appModel else { return }
         await appModel.client.shutdownAlleycatEndpoint()

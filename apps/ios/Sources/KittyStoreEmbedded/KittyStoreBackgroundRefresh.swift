@@ -117,8 +117,8 @@ private extension KittyStoreBackgroundRefresh
                 previousNewsItemsFetchRequest.resultType = .dictionaryResultType
                 previousNewsItemsFetchRequest.propertiesToFetch = [#keyPath(NewsItem.identifier)]
                 
-                let previousUpdates = try context.fetch(previousUpdatesFetchRequest) as! [[String: String]]
-                let previousNewsItems = try context.fetch(previousNewsItemsFetchRequest) as! [[String: String]]
+                let previousUpdates = try context.fetch(previousUpdatesFetchRequest) as? [[String: Any]] ?? []
+                let previousNewsItems = try context.fetch(previousNewsItemsFetchRequest) as? [[String: Any]] ?? []
                 
                 try context.save()
                 
@@ -134,13 +134,13 @@ private extension KittyStoreBackgroundRefresh
                 {
                     guard let storeApp = update.storeApp, let latestSupportedVersion = storeApp.latestSupportedVersion, latestSupportedVersion.isSupported else { continue }
                     
-                    if let previousUpdate = previousUpdates.first(where: { $0[#keyPath(InstalledApp.bundleIdentifier)] == update.bundleIdentifier })
+                    if let previousUpdate = previousUpdates.first(where: { ($0[#keyPath(InstalledApp.bundleIdentifier)] as? String) == update.bundleIdentifier })
                     {
                         // An update for this app was already available, so check whether the version or build version is different.
-                        guard let previousVersion = previousUpdate[#keyPath(InstalledApp.storeApp.latestSupportedVersion.version)] else { continue }
+                        guard let previousVersion = previousUpdate[#keyPath(InstalledApp.storeApp.latestSupportedVersion.version)] as? String else { continue }
                         
                         // previousUpdate might not contain buildVersion, but if it does then map empty string to nil to match AppVersion.
-                        let previousBuildVersion = previousUpdate[#keyPath(InstalledApp.storeApp.latestSupportedVersion._buildVersion)].map { $0.isEmpty ? nil : "" }
+                        let previousBuildVersion = (previousUpdate[#keyPath(InstalledApp.storeApp.latestSupportedVersion._buildVersion)] as? String).flatMap { $0.isEmpty ? nil : $0 }
                         
                         // Only show notification if previous latestSupportedVersion does not _exactly_ match current latestSupportedVersion.
                         guard previousVersion != latestSupportedVersion.version || previousBuildVersion != latestSupportedVersion.buildVersion  else { continue }
@@ -157,7 +157,7 @@ private extension KittyStoreBackgroundRefresh
                 
                 for newsItem in newsItems
                 {
-                    guard !previousNewsItems.contains(where: { $0[#keyPath(NewsItem.identifier)] == newsItem.identifier }) else { continue }
+                    guard !previousNewsItems.contains(where: { ($0[#keyPath(NewsItem.identifier)] as? String) == newsItem.identifier }) else { continue }
                     guard !newsItem.isSilent else { continue }
                     
                     let content = UNMutableNotificationContent()

@@ -116,9 +116,9 @@ struct HomeBottomBar: View {
         .task {
             // Tiny yield so the text field is in the view tree, then focus
             // immediately. Keyboard rises in parallel with the glass morph.
-            try? await Task.sleep(nanoseconds: 40_000_000)
+            do { try await Task.sleep(nanoseconds: 40_000_000) } catch { return }
             searchFocused = true
-            try? await Task.sleep(nanoseconds: 400_000_000)
+            do { try await Task.sleep(nanoseconds: 400_000_000) } catch { return }
             if !searchFocused { searchFocused = true }
         }
         .onDisappear { searchFocused = false }

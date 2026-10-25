@@ -15,7 +15,7 @@ enum WatchProjection {
             grouping: pendingApprovals.filter { $0.kind != .mcpElicitation },
             by: { $0.threadId ?? "" }
         )
-        let threadsByKey = Dictionary(uniqueKeysWithValues: threads.map { ($0.key, $0) })
+        let threadsByKey = Dictionary(threads.map { ($0.key, $0) }, uniquingKeysWith: { _, latest in latest })
 
         let mapped = summaries.map { summary -> WatchTask in
             let threadApprovals = approvalsByThread[summary.key.threadId] ?? []
@@ -116,7 +116,8 @@ enum WatchProjection {
     ) -> [WatchTask] {
         guard !pinned.isEmpty else { return tasks }
         let pinIndex: [PinnedThreadKey: Int] = Dictionary(
-            uniqueKeysWithValues: pinned.enumerated().map { ($1, $0) }
+            pinned.enumerated().map { ($1, $0) },
+            uniquingKeysWith: { first, _ in first }
         )
         // Pair each task with its (statusRank, pinOrder, originalIndex) so a
         // stable sort preserves intra-group ordering for unpinned trailers.
@@ -154,9 +155,9 @@ enum WatchProjection {
             !hiddenSet.contains(PinnedThreadKey(threadKey: $0.key))
         }
         if !pinned.isEmpty {
-            let byKey = Dictionary(uniqueKeysWithValues: candidates.map {
+            let byKey = Dictionary(candidates.map {
                 (PinnedThreadKey(threadKey: $0.key), $0)
-            })
+            }, uniquingKeysWith: { first, _ in first })
             return pinned.compactMap { byKey[$0] }
         }
         return Array(

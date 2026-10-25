@@ -2558,12 +2558,15 @@ struct ConversationTranscriptProjection {
         /// Row sits inside an expanded work group (drawn with a leading rule).
         var isWorkMember = false
 
+        var disambiguatedID: String?
+
         var id: String {
+            if let disambiguatedID { return disambiguatedID }
             switch content {
-            case .row(let row, _, _): "row/\(row.id)"
-            case .work(let summary, _): summary.id
-            case .collapsed: "\(turn.id)/summary"
-            case .footer: "\(turn.id)/footer"
+            case .row(let row, _, _): return "row/\(row.id)"
+            case .work(let summary, _): return summary.id
+            case .collapsed: return "\(turn.id)/summary"
+            case .footer: return "\(turn.id)/footer"
             }
         }
     }
@@ -2657,8 +2660,23 @@ struct ConversationTranscriptProjection {
                 result.append(Entry(turn: turn, content: .footer))
             }
         }
-        entries = result
-        turnIDByEntryID = Dictionary(uniqueKeysWithValues: result.map { ($0.id, $0.turn.id) })
+        // Replayed entries must not create duplicate SwiftUI identities or
+        // trap while constructing the scroll-visibility lookup.
+        var firstTurnByEntryID: [String: String] = [:]
+        var seenEntryIDs: Set<String> = []
+        entries = result.compactMap { original in
+            var entry = original
+            let baseID = entry.id
+            if let firstTurn = firstTurnByEntryID[baseID] {
+                guard firstTurn != entry.turn.id else { return nil }
+                entry.disambiguatedID = "\(entry.turn.id)/\(baseID)"
+            } else {
+                firstTurnByEntryID[baseID] = entry.turn.id
+            }
+            guard seenEntryIDs.insert(entry.id).inserted else { return nil }
+            return entry
+        }
+        turnIDByEntryID = Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0.turn.id) })
     }
 
     /// Splits a turn's rows into plain rows and runs of work rows. A run only

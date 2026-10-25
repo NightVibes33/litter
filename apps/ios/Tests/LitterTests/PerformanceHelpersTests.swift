@@ -3,6 +3,31 @@ import XCTest
 
 @MainActor
 final class PerformanceHelpersTests: XCTestCase {
+    func testReplayedProjectionEntriesHaveUniqueScrollIdentities() {
+        let item = makeAssistantItem(id: "replayed", text: "Reply", turnId: "a", turnIndex: 0, timestamp: Date())
+        let first = TranscriptTurn(id: "first", items: [item], isLive: false, isCollapsedByDefault: false, renderDigest: 1)
+        let second = TranscriptTurn(id: "second", items: [item], isLive: false, isCollapsedByDefault: false, renderDigest: 1)
+        var projection = ConversationTranscriptProjection()
+        projection.update(turns: [first, second, second], expandedTurnIDs: [], reasoning: .collapsed,
+                          commands: .collapsed, tools: .collapsed)
+        XCTAssertEqual(projection.entries.count, 2)
+        XCTAssertEqual(Set(projection.entries.map(\.id)).count, 2)
+        XCTAssertEqual(Set(projection.turnIDByEntryID.values), ["first", "second"])
+        let initialID = projection.entries[0].id
+        projection.update(turns: [first, second], expandedTurnIDs: [], reasoning: .collapsed,
+                          commands: .collapsed, tools: .collapsed)
+        XCTAssertEqual(projection.entries[0].id, initialID)
+    }
+
+    func testRepeatedScrollAndCollapseIdentitiesDoNotTrap() {
+        XCTAssertEqual(ConversationInfiniteScrollPolicy.earliestVisibleIndex(
+            visibleIDs: ["b"], orderedIDs: ["a", "b", "b"]
+        ), 1)
+        let turn = TranscriptTurn(id: "replayed", items: [], isLive: false, isCollapsedByDefault: true, renderDigest: 0)
+        let preserved = TranscriptTurn.preservingCollapseState(in: [turn], from: [turn, turn])
+        XCTAssertTrue(preserved[0].isCollapsedByDefault)
+    }
+
     func testLargeConversationRespectsCollapsePreference() {
         for count in [1, 199, 200, 2_500] {
             XCTAssertEqual(ConversationTurnCollapsePolicy.expandedRecentTurnCount(

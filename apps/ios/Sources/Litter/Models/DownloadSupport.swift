@@ -104,6 +104,11 @@ final class FileDownloadDriver: NSObject, URLSessionDownloadDelegate {
     private var continuation: CheckedContinuation<URL, Error>?
     private var session: URLSession?
     private var task: URLSessionDownloadTask?
+    // Cross-thread start/cancel/completion state is accessed only under this
+    // lock. File-result callbacks run on URLSession's serial delegate queue.
+    private let stateLock = NSLock()
+    private var isCancelled = false
+    private var hasStarted = false
     private var completedResult: Result<URL, Error>?
 
     init(destination: URL, progressHandler: @escaping (Int64, Int64) -> Void) {
@@ -114,15 +119,32 @@ final class FileDownloadDriver: NSObject, URLSessionDownloadDelegate {
     func start(request: URLRequest) async throws -> URL {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                self.continuation = continuation
                 let configuration = URLSessionConfiguration.default
                 configuration.waitsForConnectivity = true
                 configuration.timeoutIntervalForRequest = 60
                 configuration.timeoutIntervalForResource = 60 * 30
                 let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
-                self.session = session
                 let task = session.downloadTask(with: request)
-                self.task = task
+                stateLock.lock()
+                let cancelled = isCancelled || Task.isCancelled
+                let alreadyStarted = hasStarted
+                if !cancelled && !alreadyStarted {
+                    hasStarted = true
+                    self.continuation = continuation
+                    self.session = session
+                    self.task = task
+                }
+                stateLock.unlock()
+                guard !cancelled, !alreadyStarted else {
+                    session.invalidateAndCancel()
+                    if cancelled {
+                        continuation.resume(throwing: CancellationError())
+                    } else {
+                        continuation.resume(throwing: NSError(domain: "FileDownloadDriver", code: 2,
+                            userInfo: [NSLocalizedDescriptionKey: "This download has already started."]))
+                    }
+                    return
+                }
                 task.resume()
             }
         } onCancel: {
@@ -131,6 +153,11 @@ final class FileDownloadDriver: NSObject, URLSessionDownloadDelegate {
     }
 
     func cancel() {
+        stateLock.lock()
+        isCancelled = true
+        let task = self.task
+        let session = self.session
+        stateLock.unlock()
         task?.cancel()
         session?.invalidateAndCancel()
     }
@@ -146,6 +173,12 @@ final class FileDownloadDriver: NSObject, URLSessionDownloadDelegate {
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        if let response = downloadTask.response as? HTTPURLResponse,
+           !(200..<300).contains(response.statusCode) {
+            completedResult = .failure(NSError(domain: "FileDownloadDriver", code: response.statusCode,
+                userInfo: [NSLocalizedDescriptionKey: "Download failed (HTTP \(response.statusCode))."]))
+            return
+        }
         do {
             let manager = FileManager.default
             try manager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -160,12 +193,13 @@ final class FileDownloadDriver: NSObject, URLSessionDownloadDelegate {
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        defer {
-            continuation = nil
-            self.task = nil
-            self.session = nil
-            session.finishTasksAndInvalidate()
-        }
+        stateLock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        self.task = nil
+        self.session = nil
+        stateLock.unlock()
+        defer { session.finishTasksAndInvalidate() }
 
         if let error {
             continuation?.resume(throwing: error)

@@ -289,7 +289,7 @@ struct HomeSessionsList: View {
 
     var body: some View {
         let now = Date()
-        let indexByKey = Dictionary(uniqueKeysWithValues: sessions.enumerated().map { ($1.key, $0) })
+        let indexByKey = Dictionary(sessions.enumerated().map { ($1.key, $0) }, uniquingKeysWith: { first, _ in first })
         let groups = SessionListSection.group(
             sessions,
             now: now,

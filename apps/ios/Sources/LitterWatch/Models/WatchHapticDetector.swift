@@ -46,7 +46,7 @@ struct WatchHapticDetector {
             return Outcome(haptics: [], updatedLastFired: lastFired)
         }
 
-        let oldById = Dictionary(uniqueKeysWithValues: oldTasks.map { ($0.id, $0) })
+        let oldById = Dictionary(oldTasks.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
         var firedNow = lastFired
         var emitted: [WatchHaptic] = []
         var seenThisCall: Set<WatchHaptic> = []

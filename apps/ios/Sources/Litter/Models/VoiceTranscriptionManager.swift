@@ -11,9 +11,7 @@ final class VoiceTranscriptionManager {
 
     @ObservationIgnored private var audioEngine: AVAudioEngine?
     @ObservationIgnored private let bufferCollector = AudioBufferCollector()
-    @ObservationIgnored private nonisolated(unsafe) var lastLevelUpdate: CFAbsoluteTime = 0
 
-    private static let targetSampleRate: Double = 24000
     private static let transcribeModel = "gpt-4o-mini-transcribe"
 
     func requestMicPermission() async -> Bool {
@@ -21,6 +19,7 @@ final class VoiceTranscriptionManager {
     }
 
     func startRecording() {
+        guard !isRecording, !isTranscribing else { return }
         bufferCollector.reset()
         error = nil
 
@@ -36,21 +35,32 @@ final class VoiceTranscriptionManager {
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
+        guard format.channelCount > 0, format.sampleRate.isFinite, format.sampleRate > 0 else {
+            error = "No microphone input is available."
+            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            return
+        }
         let collector = bufferCollector
 
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
             collector.append(buffer)
             guard let self else { return }
             let now = CFAbsoluteTimeGetCurrent()
-            guard now - self.lastLevelUpdate > 0.05 else { return }
-            self.lastLevelUpdate = now
+            guard collector.shouldPublishLevel(at: now) else { return }
             let level = Self.rms(buffer: buffer)
-            Task { @MainActor in self.audioLevel = level }
+            Task { @MainActor in
+                guard self.isRecording else { return }
+                self.audioLevel = level
+            }
         }
 
         do {
             try engine.start()
         } catch {
+            engine.inputNode.removeTap(onBus: 0)
+            engine.stop()
+            bufferCollector.reset()
+            try? session.setActive(false, options: .notifyOthersOnDeactivation)
             self.error = "Failed to start audio engine."
             return
         }
@@ -62,11 +72,7 @@ final class VoiceTranscriptionManager {
     func stopAndTranscribe(authMethod: AuthMode?, authToken: String?) async -> String? {
         guard isRecording else { return nil }
         teardownEngine()
-
-        guard let wav = encodeWAV() else {
-            error = "Failed to encode audio."
-            return nil
-        }
+        let chunks = bufferCollector.drain()
 
         guard let authToken, !authToken.isEmpty else {
             error = "Not logged in."
@@ -75,6 +81,19 @@ final class VoiceTranscriptionManager {
 
         isTranscribing = true
         defer { isTranscribing = false }
+        let encoding = Task.detached(priority: .userInitiated) {
+            DictationAudioEncoder.encodeWAV(chunks)
+        }
+        let encoded = await withTaskCancellationHandler {
+            await encoding.value
+        } onCancel: {
+            encoding.cancel()
+        }
+        guard !Task.isCancelled else { return nil }
+        guard let wav = encoded else {
+            error = "Failed to encode audio."
+            return nil
+        }
 
         do {
             return try await transcribe(wav: wav, authMethod: authMethod, token: authToken)
@@ -86,6 +105,7 @@ final class VoiceTranscriptionManager {
 
     func cancelRecording() {
         teardownEngine()
+        bufferCollector.reset()
     }
 
     // MARK: - Private
@@ -97,61 +117,6 @@ final class VoiceTranscriptionManager {
         isRecording = false
         audioLevel = 0
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-    }
-
-    private func encodeWAV() -> Data? {
-        let buffers = bufferCollector.drain()
-        guard let first = buffers.first else { return nil }
-
-        let srcRate = first.format.sampleRate
-        let targetRate = Self.targetSampleRate
-
-        var allSamples = [Float]()
-        for buf in buffers {
-            guard let data = buf.floatChannelData?[0] else { continue }
-            allSamples.append(contentsOf: UnsafeBufferPointer(start: data, count: Int(buf.frameLength)))
-        }
-        guard !allSamples.isEmpty else { return nil }
-
-        let resampled: [Int16]
-        if abs(srcRate - targetRate) < 1.0 {
-            resampled = allSamples.map { Self.floatToInt16($0) }
-        } else {
-            let ratio = targetRate / srcRate
-            let outCount = Int(Double(allSamples.count) * ratio)
-            var out = [Int16](repeating: 0, count: outCount)
-            for i in 0..<outCount {
-                let srcIdx = Double(i) / ratio
-                let idx = Int(srcIdx)
-                let frac = Float(srcIdx - Double(idx))
-                let s0 = allSamples[min(idx, allSamples.count - 1)]
-                let s1 = allSamples[min(idx + 1, allSamples.count - 1)]
-                out[i] = Self.floatToInt16(s0 + frac * (s1 - s0))
-            }
-            resampled = out
-        }
-
-        guard Float(resampled.count) / Float(targetRate) >= 0.5 else { return nil }
-
-        let dataSize = resampled.count * 2
-        var wav = Data(capacity: 44 + dataSize)
-        wav.append(contentsOf: "RIFF".utf8)
-        wav.appendLE(UInt32(36 + dataSize))
-        wav.append(contentsOf: "WAVE".utf8)
-        wav.append(contentsOf: "fmt ".utf8)
-        wav.appendLE(UInt32(16))
-        wav.appendLE(UInt16(1)) // PCM
-        wav.appendLE(UInt16(1)) // mono
-        wav.appendLE(UInt32(UInt32(targetRate)))
-        wav.appendLE(UInt32(UInt32(targetRate) * 2)) // byte rate
-        wav.appendLE(UInt16(2)) // block align
-        wav.appendLE(UInt16(16)) // bits per sample
-        wav.append(contentsOf: "data".utf8)
-        wav.appendLE(UInt32(dataSize))
-        resampled.withUnsafeBufferPointer { ptr in
-            wav.append(contentsOf: UnsafeRawBufferPointer(ptr))
-        }
-        return wav
     }
 
     private func transcribe(wav: Data, authMethod: AuthMode?, token: String) async throws -> String {
@@ -196,10 +161,6 @@ final class VoiceTranscriptionManager {
         return try JSONDecoder().decode(TranscriptionResponse.self, from: data).text
     }
 
-    private static func floatToInt16(_ v: Float) -> Int16 {
-        Int16(max(-1, min(1, v)) * Float(Int16.max))
-    }
-
     private static func rms(buffer: AVAudioPCMBuffer) -> Float {
         guard let data = buffer.floatChannelData?[0] else { return 0 }
         let count = Int(buffer.frameLength)
@@ -210,17 +171,31 @@ final class VoiceTranscriptionManager {
     }
 }
 
-private final class AudioBufferCollector: @unchecked Sendable {
+final class AudioBufferCollector: @unchecked Sendable {
     private let lock = NSLock()
-    private var buffers: [AVAudioPCMBuffer] = []
+    private var buffers: [RecordedAudioChunk] = []
+    private var lastLevelUpdate: CFAbsoluteTime = 0
+
+    func shouldPublishLevel(at now: CFAbsoluteTime) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard now - lastLevelUpdate > 0.05 else { return false }
+        lastLevelUpdate = now
+        return true
+    }
 
     func append(_ buffer: AVAudioPCMBuffer) {
+        guard buffer.format.channelCount > 0, let samples = buffer.floatChannelData?[0] else { return }
+        let chunk = RecordedAudioChunk(
+            sampleRate: buffer.format.sampleRate,
+            samples: Array(UnsafeBufferPointer(start: samples, count: Int(buffer.frameLength)))
+        )
         lock.lock()
-        buffers.append(buffer)
+        buffers.append(chunk)
         lock.unlock()
     }
 
-    func drain() -> [AVAudioPCMBuffer] {
+    func drain() -> [RecordedAudioChunk] {
         lock.lock()
         let result = buffers
         buffers = []
@@ -230,14 +205,8 @@ private final class AudioBufferCollector: @unchecked Sendable {
 
     func reset() {
         lock.lock()
+        lastLevelUpdate = 0
         buffers = []
         lock.unlock()
-    }
-}
-
-private extension Data {
-    mutating func appendLE<T: FixedWidthInteger>(_ value: T) {
-        var le = value.littleEndian
-        Swift.withUnsafeBytes(of: &le) { append(contentsOf: $0) }
     }
 }

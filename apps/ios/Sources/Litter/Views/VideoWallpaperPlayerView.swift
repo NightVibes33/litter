@@ -41,6 +41,8 @@ struct VideoWallpaperPlayerView: UIViewRepresentable {
         if context.coordinator.currentURL != fileURL {
             context.coordinator.currentURL = fileURL
             if let player = context.coordinator.player {
+                context.coordinator.looper?.disableLooping()
+                context.coordinator.looper = nil
                 player.removeAllItems()
                 let templateItem = AVPlayerItem(url: fileURL)
                 context.coordinator.looper = AVPlayerLooper(player: player, templateItem: templateItem)
@@ -83,8 +85,9 @@ struct VideoWallpaperPlayerView: UIViewRepresentable {
 
         func tearDown() {
             player?.pause()
-            player?.removeAllItems()
+            looper?.disableLooping()
             looper = nil
+            player?.removeAllItems()
             player = nil
             if let bg = backgroundObserver {
                 NotificationCenter.default.removeObserver(bg)

@@ -165,15 +165,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         // side and the daemon waiting up to its idle timeout to reap
         // the final zombie.
         LLog.info("lifecycle", "applicationWillTerminate — closing alleycat endpoint")
-        let semaphore = DispatchSemaphore(value: 0)
-        Task { @MainActor in
-            await self.appRuntime?.shutdownAlleycatEndpoint()
-            semaphore.signal()
-        }
-        // applicationWillTerminate gets ~5s before the OS kills us.
-        // Block briefly on the close handshake so iroh can flush
-        // CONNECTION_CLOSE frames; bail if iroh's drain takes too long.
-        _ = semaphore.wait(timeout: .now() + 2.5)
+        // Termination is best effort. A MainActor task cannot make progress
+        // while this delegate callback blocks that same actor.
+        appRuntime?.beginAlleycatEndpointShutdown()
     }
 
     @MainActor

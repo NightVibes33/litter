@@ -4,6 +4,22 @@ import XCTest
 @MainActor
 final class WatchProjectionTests: XCTestCase {
 
+    func testRepeatedPinOrderKeepsFirstPosition() {
+        let a = makeSummary(serverId: "srv", threadId: "a", updatedAt: 1, hasActiveTurn: false)
+        let b = makeSummary(serverId: "srv", threadId: "b", updatedAt: 2, hasActiveTurn: false)
+        let tasks = WatchProjection.tasks(summaries: [a, b], threads: [], pendingApprovals: [])
+        let pinA = PinnedThreadKey(serverId: "srv", threadId: "a")
+        let pinB = PinnedThreadKey(serverId: "srv", threadId: "b")
+        XCTAssertEqual(WatchProjection.applyPinOrder(tasks, pinned: [pinA, pinB, pinA]).map(\.threadId), ["a", "b"])
+    }
+
+    func testRepeatedHydratedThreadsDoNotCrashProjection() {
+        let summary = makeSummary(serverId: "srv", threadId: "a", updatedAt: 1, hasActiveTurn: false)
+        let thread = makeThread(serverId: "srv", threadId: "a", items: [])
+        let tasks = WatchProjection.tasks(summaries: [summary], threads: [thread, thread], pendingApprovals: [])
+        XCTAssertEqual(tasks.map(\.threadId), ["a"])
+    }
+
     // MARK: - 1. Status ranking + sort tiebreak
 
     func testTasksOrdersNeedsApprovalThenRunningThenIdleAndTieBreaksByRecency() {

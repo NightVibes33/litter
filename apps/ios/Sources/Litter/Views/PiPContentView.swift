@@ -47,7 +47,7 @@ struct PiPContentView: View {
             savedServers: [],
             activeServerId: activeKey.serverId
         )
-        let serversById = Dictionary(uniqueKeysWithValues: servers.map { ($0.id, $0) })
+        let serversById = Dictionary(servers.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
         let sessions = HomeDashboardSupport.recentConnectedSessions(
             from: snapshot.sessionSummaries,
             serversById: serversById,

@@ -305,7 +305,7 @@ final class HomeDashboardModel {
             }
             let nextAllSessions = HomeDashboardSupport.recentConnectedSessions(
                 from: visibleSummaries,
-                serversById: Dictionary(uniqueKeysWithValues: nextConnectedServers.map { ($0.id, $0) }),
+                serversById: Dictionary(nextConnectedServers.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest }),
                 limit: nil
             )
             return Snapshot(
@@ -377,7 +377,7 @@ final class HomeDashboardModel {
         // `canBrowseDirectories` checks (which fire on every snapshot bump).
         localServerIds = Set(snapshot.rawServers.filter(\.isLocal).map(\.serverId))
         browseableServerIds = Set(snapshot.rawServers.filter(\.canBrowseDirectories).map(\.serverId))
-        serverSnapshotsById = Dictionary(uniqueKeysWithValues: snapshot.rawServers.map { ($0.serverId, $0) })
+        serverSnapshotsById = Dictionary(snapshot.rawServers.map { ($0.serverId, $0) }, uniquingKeysWith: { _, latest in latest })
 
         // Keep selectedServerId valid: if the server it points at isn't in
         // the live/launchable list, clear the scope. Default is no filter —
@@ -486,9 +486,9 @@ final class HomeDashboardModel {
             !hiddenSet.contains(SavedThreadsStore.PinnedKey(threadKey: $0.key))
         }
         if !pinned.isEmpty {
-            let byKey = Dictionary(uniqueKeysWithValues: candidates.map {
+            let byKey = Dictionary(candidates.map {
                 (SavedThreadsStore.PinnedKey(threadKey: $0.key), $0)
-            })
+            }, uniquingKeysWith: { first, _ in first })
             let resolvedPins = pinned.compactMap { byKey[$0] }
             guard !resolvedPins.isEmpty else {
                 return Array(candidates.prefix(10))

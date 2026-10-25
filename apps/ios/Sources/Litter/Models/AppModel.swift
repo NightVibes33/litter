@@ -2676,7 +2676,7 @@ final class AppModel {
         // payloads are transport projections and are merged by item id.
         if thread.hydratedConversationItems.count < cached.hydratedConversationItems.count {
             var merged = thread
-            var itemsByID = Dictionary(uniqueKeysWithValues: cached.hydratedConversationItems.map { ($0.id, $0) })
+            var itemsByID = Dictionary(cached.hydratedConversationItems.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
             for item in thread.hydratedConversationItems { itemsByID[item.id] = item }
             merged.hydratedConversationItems = cached.hydratedConversationItems.map { itemsByID[$0.id] ?? $0 }
             let cachedIDs = Set(cached.hydratedConversationItems.map(\.id))

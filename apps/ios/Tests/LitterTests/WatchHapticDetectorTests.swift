@@ -3,6 +3,15 @@ import XCTest
 
 final class WatchHapticDetectorTests: XCTestCase {
 
+    func testReplayedOldTasksUseLatestStatusWithoutDuplicateHaptics() {
+        let outcome = WatchHapticDetector().evaluate(
+            oldTasks: [makeTask(id: "1", status: .idle), makeTask(id: "1", status: .running)],
+            newTasks: [makeTask(id: "1", status: .idle), makeTask(id: "1", status: .idle)],
+            lastFired: [:], now: Date(timeIntervalSince1970: 100)
+        )
+        XCTAssertEqual(outcome.haptics, [.success])
+    }
+
     // MARK: - First-hydration suppression
 
     func testFirstHydrationEmitsNoHapticsEvenWhenStatusesAreInteresting() {

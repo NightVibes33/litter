@@ -72,6 +72,13 @@ final class AppRuntimeController {
     /// CONNECTION_CLOSE to peers instead of logging "Aborting
     /// ungracefully" when the static MobileClient slot is finally
     /// dropped at process exit.
+    func beginAlleycatEndpointShutdown() {
+        guard let client = appModel?.client else { return }
+        Task.detached(priority: .utility) {
+            await client.shutdownAlleycatEndpoint()
+        }
+    }
+
     func shutdownAlleycatEndpoint() async {
         guard let appModel else { return }
         await appModel.client.shutdownAlleycatEndpoint()

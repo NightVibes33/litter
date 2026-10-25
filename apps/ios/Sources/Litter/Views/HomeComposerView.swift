@@ -321,9 +321,9 @@ struct HomeComposerView: View {
             // settles as a safety net for edge cases where the first pass
             // fired before the window attachment.
             guard autoFocus else { return }
-            try? await Task.sleep(nanoseconds: 40_000_000)
+            do { try await Task.sleep(nanoseconds: 40_000_000) } catch { return }
             isComposerFocused = true
-            try? await Task.sleep(nanoseconds: 400_000_000)
+            do { try await Task.sleep(nanoseconds: 400_000_000) } catch { return }
             if !isComposerFocused {
                 isComposerFocused = true
             }

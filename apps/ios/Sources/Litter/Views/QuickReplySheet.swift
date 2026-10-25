@@ -91,7 +91,7 @@ struct QuickReplySheet: View {
             }
             .task {
                 // Pop the keyboard once the sheet has settled.
-                try? await Task.sleep(nanoseconds: 150_000_000)
+                do { try await Task.sleep(nanoseconds: 150_000_000) } catch { return }
                 isFocused = true
             }
         }

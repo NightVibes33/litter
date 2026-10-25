@@ -34,6 +34,56 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  ios-swift-syntax:
+    runs-on: macos-26-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.3'
+      - name: Parse all first-party Swift source and tests
+        run: |
+          python3 - <<'PY'
+          from concurrent.futures import ThreadPoolExecutor
+          from pathlib import Path
+          import subprocess, sys
+          files = sorted(Path("apps/ios").rglob("*.swift"))
+          files = [p for p in files if "Sources" in p.parts or "Tests" in p.parts]
+          def parse(path):
+              result = subprocess.run(["xcrun", "swiftc", "-frontend", "-parse", str(path)], capture_output=True, text=True)
+              return path, result
+          failed = 0
+          with ThreadPoolExecutor(max_workers=4) as pool:
+              for path, result in pool.map(parse, files):
+                  if result.returncode:
+                      failed += 1
+                      print(str(path) + "\\n" + result.stderr)
+          print(f"Parsed {len(files)} Swift files; {failed} failures. Syntax validation only; device build and tests remain required.")
+          sys.exit(bool(failed))
+          PY
+
+      - name: Run isolated dictation encoder regressions
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil, subprocess, tempfile
+          root = Path(tempfile.mkdtemp(prefix="alleycat-swift-audit-"))
+          (root / "Sources/Litter").mkdir(parents=True)
+          (root / "Tests/LitterTests").mkdir(parents=True)
+          (root / "Package.swift").write_text(
+              '// swift-tools-version: 6.0\n'
+              'import PackageDescription\n'
+              'let package = Package(name: "LitterAudit", targets: ['
+              '.target(name: "Litter"), '
+              '.testTarget(name: "LitterTests", dependencies: ["Litter"])])\n'
+          )
+          shutil.copyfile("apps/ios/Sources/Litter/Models/DictationAudioEncoder.swift", root / "Sources/Litter/DictationAudioEncoder.swift")
+          shutil.copyfile("apps/ios/Tests/LitterTests/DictationAudioEncoderTests.swift", root / "Tests/LitterTests/DictationAudioEncoderTests.swift")
+          subprocess.run(["swift", "test", "--package-path", str(root)], check=True)
+          PY
+
   shared-prep:
     runs-on: macos-26-intel
     timeout-minutes: 60

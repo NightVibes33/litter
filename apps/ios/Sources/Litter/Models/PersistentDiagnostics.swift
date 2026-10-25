@@ -21,9 +21,11 @@ final class DiagnosticsLogWriter: @unchecked Sendable {
     }
 
     // High-volume debug/info writes are dispatched to a serial utility queue.
-    // Critical warnings/errors wait for preceding entries, preserving order.
+    // Background critical writers can wait for durability; UI callers must
+    // never drain a streaming log backlog on the main thread. The serial
+    // queue preserves ordering for both paths.
     func appendPrepared(_ line: String, critical: Bool) {
-        if critical {
+        if critical && !Thread.isMainThread {
             loggingQueue.sync { appendLine(line, alreadyRedacted: true) }
         } else {
             loggingQueue.async { [self] in appendLine(line, alreadyRedacted: true) }
