@@ -1,4 +1,5 @@
 use crate::ffi::ClientError;
+use base64::Engine;
 use crate::ffi::shared::{shared_mobile_client, shared_runtime};
 use crate::session::connection::ServerConfig;
 use crate::ssh::{
@@ -416,6 +417,113 @@ impl SshBridge {
         })
     }
 
+    /// Create a private temporary directory on the same SSH host as the agent.
+    /// Only POSIX sessions support this transport; non-SSH remote servers must
+    /// never receive an iPhone URL or an iSH-only file mention.
+    pub async fn ssh_attachment_begin(
+        &self,
+        session_id: String,
+        name: String,
+    ) -> Result<String, ClientError> {
+        let session = self.ssh_sessions_lock().get(&session_id).cloned()
+            .ok_or_else(|| ClientError::InvalidParams("SSH upload session is unavailable".into()))?;
+        if !matches!(session.shell, RemoteShell::Posix) {
+            return Err(ClientError::InvalidParams("Direct file transfer currently requires a Linux/macOS SSH session".into()));
+        }
+        let result = session.client.exec_shell("umask 077; mktemp -d /tmp/alleycat-attach.XXXXXX", session.shell)
+            .await.map_err(map_ssh_error)?;
+        let directory = result.stdout.trim();
+        if result.exit_code != 0 || !directory.starts_with("/tmp/alleycat-attach.")
+            || directory.contains('\n') || directory.contains('\r') {
+            return Err(ClientError::Transport("Could not create a private attachment directory on the remote computer".into()));
+        }
+        let raw_name = name.rsplit(['/', '\\']).next().unwrap_or("attachment.zip");
+        let sanitized: String = raw_name.chars().map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' { c } else { '_' }
+        }).take(180).collect();
+        let sanitized = if sanitized.is_empty() || sanitized == "." || sanitized == ".." {
+            "attachment.zip"
+        } else {
+            sanitized.as_str()
+        };
+        let path = format!("{directory}/{sanitized}");
+        session.client.upload(b"", &path).await.map_err(map_ssh_error)?;
+        Ok(path)
+    }
+
+    /// Stream an encoded chunk into a private remote file through SSH stdin.
+    pub async fn ssh_attachment_append(
+        &self,
+        session_id: String,
+        remote_path: String,
+        content_base64: String,
+    ) -> Result<(), ClientError> {
+        if !valid_ssh_attachment_path(&remote_path) {
+            return Err(ClientError::InvalidParams("Invalid remote attachment path".into()));
+        }
+        let content = base64::engine::general_purpose::STANDARD
+            .decode(content_base64.as_bytes())
+            .map_err(|_| ClientError::InvalidParams("Invalid attachment upload chunk".into()))?;
+        if content.len() > 256 * 1024 {
+            return Err(ClientError::InvalidParams("Attachment upload chunk exceeds 256 KiB".into()));
+        }
+        let session = self.ssh_sessions_lock().get(&session_id).cloned()
+            .ok_or_else(|| ClientError::InvalidParams("SSH upload session is unavailable".into()))?;
+        if !matches!(session.shell, RemoteShell::Posix) {
+            return Err(ClientError::InvalidParams("SSH attachment uploads require a POSIX host".into()));
+        }
+        session.client.upload_append(&content, &remote_path).await.map_err(map_ssh_error)
+    }
+
+    /// Re-check the remote copy before exposing its path to an agent.
+    pub async fn ssh_attachment_verify(
+        &self,
+        session_id: String,
+        remote_path: String,
+        expected_size: u64,
+    ) -> Result<(), ClientError> {
+        if !valid_ssh_attachment_path(&remote_path) || expected_size == 0 {
+            return Err(ClientError::InvalidParams("Invalid remote attachment or empty file".into()));
+        }
+        let session = self.ssh_sessions_lock().get(&session_id).cloned()
+            .ok_or_else(|| ClientError::InvalidParams("SSH upload session is unavailable".into()))?;
+        if !matches!(session.shell, RemoteShell::Posix) {
+            return Err(ClientError::InvalidParams("SSH attachment verification requires a POSIX host".into()));
+        }
+        let quoted = crate::shell_quoting::posix_quote(&remote_path);
+        let result = session.client.exec_shell(&format!("test -f {quoted} && wc -c < {quoted}"), session.shell)
+            .await.map_err(map_ssh_error)?;
+        let actual = result.stdout.trim().parse::<u64>().ok();
+        if result.exit_code != 0 || actual != Some(expected_size) {
+            return Err(ClientError::Transport("The ZIP did not arrive intact in the remote Linux workspace".into()));
+        }
+        Ok(())
+    }
+
+    pub async fn ssh_attachment_cancel(
+        &self,
+        session_id: String,
+        remote_path: String,
+    ) -> Result<(), ClientError> {
+        if !valid_ssh_attachment_path(&remote_path) {
+            return Err(ClientError::InvalidParams("Invalid remote attachment cleanup path".into()));
+        }
+        let session = self.ssh_sessions_lock().get(&session_id).cloned()
+            .ok_or_else(|| ClientError::InvalidParams("SSH upload session is unavailable".into()))?;
+        if !matches!(session.shell, RemoteShell::Posix) {
+            return Err(ClientError::InvalidParams("SSH attachment cleanup requires POSIX SSH".into()));
+        }
+        let quoted = crate::shell_quoting::posix_quote(&remote_path);
+        let cmd = format!("rm -f -- {quoted}; rmdir -- {}", crate::shell_quoting::posix_quote(
+            remote_path.rsplit_once('/').map(|(parent, _)| parent).unwrap_or("/tmp")
+        ));
+        let res = session.client.exec_shell(&cmd, session.shell).await.map_err(map_ssh_error)?;
+        if res.exit_code != 0 {
+            return Err(ClientError::Transport("Remote attachment cleanup failed".into()));
+        }
+        Ok(())
+    }
+
     pub async fn ssh_close(&self, session_id: String) -> Result<(), ClientError> {
         debug!("SshBridge: ssh_close session_id={}", session_id);
         let session = self
@@ -444,6 +552,22 @@ impl SshBridge {
         debug!("SshBridge: ssh_close completed session_id={}", session_id);
         Ok(())
     }
+}
+
+
+fn valid_ssh_attachment_path(path: &str) -> bool {
+    let Some(suffix) = path.strip_prefix("/tmp/alleycat-attach.") else {
+        return false;
+    };
+    let Some((directory_id, file_name)) = suffix.split_once('/') else {
+        return false;
+    };
+    directory_id.len() >= 6
+        && directory_id.chars().all(|c| c.is_ascii_alphanumeric())
+        && !file_name.is_empty()
+        && file_name != "."
+        && file_name != ".."
+        && file_name.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
 }
 
 pub(crate) fn ssh_auth_kind(auth: &SshAuth) -> &'static str {

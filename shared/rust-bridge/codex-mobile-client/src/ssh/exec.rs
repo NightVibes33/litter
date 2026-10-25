@@ -174,6 +174,16 @@ impl SshClient {
     /// Write `content` to a remote file at `remote_path` via `cat`. Avoids
     /// an SFTP dependency by piping stdin into a shell command.
     pub async fn upload(&self, content: &[u8], remote_path: &str) -> Result<(), SshError> {
+        self.upload_with_mode(content, remote_path, false).await
+    }
+
+    /// Append a bounded chunk using an SSH data channel; neither a temporary
+    /// base64 shell argument nor an SFTP server is required.
+    pub async fn upload_append(&self, content: &[u8], remote_path: &str) -> Result<(), SshError> {
+        self.upload_with_mode(content, remote_path, true).await
+    }
+
+    async fn upload_with_mode(&self, content: &[u8], remote_path: &str, append: bool) -> Result<(), SshError> {
         let handle = self.handle.lock().await;
         if handle.is_closed() {
             return Err(SshError::Disconnected);
@@ -184,7 +194,8 @@ impl SshClient {
             .map_err(|e| SshError::ConnectionFailed(format!("open session: {e}")))?;
         drop(handle);
 
-        let cmd = format!("cat > {}", shell_quote(remote_path));
+        let operator = if append { ">>" } else { ">" };
+        let cmd = format!("umask 077; cat {operator} {}", shell_quote(remote_path));
         channel
             .exec(true, cmd.as_bytes())
             .await

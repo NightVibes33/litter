@@ -221,6 +221,7 @@ struct SSHAgentPickerSheet: View {
                     runtimeKinds: runtimeKinds,
                     transport: .ephemeral
                 )
+                await SshSessionStore.shared.record(sessionId: context.sessionId, for: result.serverId)
                 isConnecting = false
                 onConnected(SSHBridgeAgentResult(
                     serverId: result.serverId,
