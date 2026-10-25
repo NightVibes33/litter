@@ -64,7 +64,7 @@ jobs:
           sys.exit(bool(failed))
           PY
 
-      - name: Run isolated dictation encoder regressions
+      - name: Run isolated encoder and download regressions
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -77,10 +77,12 @@ jobs:
               'import PackageDescription\n'
               'let package = Package(name: "LitterAudit", platforms: [.macOS(.v14)], targets: ['
               '.target(name: "Litter"), '
-              '.testTarget(name: "LitterTests", dependencies: ["Litter"])])\n'
+              '.testTarget(name: "LitterTests", dependencies: ["Litter"])], swiftLanguageModes: [.v5])\n'
           )
           shutil.copyfile("apps/ios/Sources/Litter/Models/DictationAudioEncoder.swift", root / "Sources/Litter/DictationAudioEncoder.swift")
           shutil.copyfile("apps/ios/Tests/LitterTests/DictationAudioEncoderTests.swift", root / "Tests/LitterTests/DictationAudioEncoderTests.swift")
+          shutil.copyfile("apps/ios/Sources/Litter/Models/DownloadSupport.swift", root / "Sources/Litter/DownloadSupport.swift")
+          shutil.copyfile("apps/ios/Tests/LitterTests/FileDownloadDriverTests.swift", root / "Tests/LitterTests/FileDownloadDriverTests.swift")
           subprocess.run(["swift", "test", "--package-path", str(root)], check=True)
           PY
 

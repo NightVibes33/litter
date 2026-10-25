@@ -53,7 +53,9 @@ own settings. A global Swift 6 migration is not included in these fixes.
 Local `git diff --check` passes. CI at `4ed805b` parsed 314 Swift files with
 zero syntax failures. The isolated encoder package initially omitted its macOS
 minimum and failed an availability check; the package now targets macOS 14.
-Native app tests remain pending. This execution environment has no Xcode or Swift
+At `a51e6fe`, all 314 Swift files parsed and all four isolated encoder tests
+passed on Xcode 26.3. Native app tests remain pending. This execution environment
+has no Xcode or Swift
 compiler; native compilation and simulator execution are delegated to CI.
 The new independent syntax job is explicitly not a substitute for type checking,
 XCTest, UI tests or hardware acceptance. Existing Mobile CI also runs the shared
