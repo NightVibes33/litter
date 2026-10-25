@@ -44,6 +44,10 @@ class FakefsComposerContractTests(unittest.TestCase):
         self.assertIn("guard attach.pendingFileImports == 0", HOME)
         self.assertIn("slashErrorMessage = \"Could not attach", CONVERSATION)
         self.assertIn('importError = "Could not attach', HOME)
+        self.assertIn("guard !preparingFileSend", CONVERSATION)
+        self.assertIn("guard !isPreparingSend", HOME)
+        self.assertIn("importing", HOME.lower())
+        self.assertIn("importing", CONVERSATION.lower())
 
 if __name__ == "__main__":
     unittest.main()

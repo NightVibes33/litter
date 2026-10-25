@@ -18,6 +18,7 @@ final class HomeComposerAttachmentState {
     var attachedFiles: [ComposerFileAttachment] = []
     var importedFiles: [ConversationAttachment] = []
     var pendingFileImports = 0
+    var isPreparingSend = false
     var importError: String?
 
     var composerFileChips: [ComposerFileAttachment] {
@@ -58,6 +59,11 @@ final class HomeComposerAttachmentState {
 
     func importPickedURLs(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
+        guard !isPreparingSend else {
+            importError = "Finish sending this turn before attaching another file."
+            return
+        }
+        importError = nil
         pendingFileImports += 1
         Task { @MainActor in
             defer { pendingFileImports -= 1 }
@@ -148,8 +154,12 @@ private struct HomeComposerPresentationHost: View {
                 allowedContentTypes: ConversationAttachmentSupport.supportedFileContentTypes,
                 allowsMultipleSelection: true
             ) { result in
-                guard case let .success(urls) = result, !urls.isEmpty else { return }
-                attach.importPickedURLs(urls)
+                switch result {
+                case .success(let urls):
+                    if !urls.isEmpty { attach.importPickedURLs(urls) }
+                case .failure(let error):
+                    attach.importError = "Could not select a file: \(error.localizedDescription)"
+                }
             }
             .onChange(of: attach.selectedPhotos) { _, items in
                 guard !items.isEmpty else { return }
@@ -248,6 +258,18 @@ struct HomeComposerView: View {
                             .foregroundStyle(LitterTheme.textMuted)
                     }
                     .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+            }
+
+            if attach.pendingFileImports > 0 {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Importing \(attach.pendingFileImports) file selection(s) into iSH…")
+                        .font(.caption)
+                        .foregroundStyle(LitterTheme.textSecondary)
+                    Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 6)
@@ -369,10 +391,14 @@ struct HomeComposerView: View {
         }
 
         isSubmitting = true
+        attach.isPreparingSend = true
         errorMessage = nil
 
         Task {
-            defer { isSubmitting = false }
+            defer {
+                isSubmitting = false
+                attach.isPreparingSend = false
+            }
             var createdThreadKey: ThreadKey?
             do {
                 for attachment in importedFiles {

@@ -188,8 +188,12 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
                 allowedContentTypes: ConversationAttachmentSupport.supportedFileContentTypes,
                 allowsMultipleSelection: true
             ) { result in
-                guard case let .success(urls) = result, !urls.isEmpty else { return }
-                onLoadSelectedFiles(urls)
+                switch result {
+                case .success(let urls):
+                    if !urls.isEmpty { onLoadSelectedFiles(urls) }
+                case .failure(let error):
+                    slashErrorMessage = "Could not select a file: \(error.localizedDescription)"
+                }
             }
             .onChange(of: selectedPhotos) { _, items in
                 guard !items.isEmpty else { return }

@@ -1511,6 +1511,17 @@ private struct ConversationInputBar: View {
 
     private var composerSurface: some View {
         VStack(spacing: 0) {
+            if pendingFileImports > 0 {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Importing \(pendingFileImports) file selection(s) into iSH…")
+                        .font(.caption)
+                        .foregroundStyle(LitterTheme.textSecondary)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+            }
             ConversationComposerContentView(
                 attachedImages: attachedImages,
                 attachedFiles: composerFileChips,
@@ -1647,6 +1658,10 @@ private struct ConversationInputBar: View {
 
     private func importPickedURLs(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
+        guard !preparingFileSend else {
+            slashErrorMessage = "Finish sending this turn before attaching another file."
+            return
+        }
         // Increment synchronously so Send cannot race the first async write.
         pendingFileImports += 1
         Task { @MainActor in
