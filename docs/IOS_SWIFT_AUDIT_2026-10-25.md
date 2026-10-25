@@ -46,6 +46,8 @@ own settings. A global Swift 6 migration is not included in these fixes.
 | Diagnostics | Main-thread warning/error drained queued disk writes | UI logging stays queued, preserving serial order; explicit drain remains available |
 | Dictation | Invalid input format could trigger installTap assertions; failed startup retained resources; callback buffers were reused | Validate format, clean failed startup, copy mono samples, encode WAV off the main actor, lock meter throttle, clear cancelled buffers |
 | Store refresh | Nullable dictionary fields failed forced String casts; build version comparison discarded actual value | Read typed optional fields from Any-valued rows and preserve the build version |
+| Background tasks | Repeated scene callbacks could overwrite a live background task identifier | Keep the existing registration and guard expired identifiers |
+| Web widgets | Nonfinite height messages and delayed callbacks after teardown could reach SwiftUI state | Require finite heights and clear callbacks/bindings during teardown |
 | Video wallpaper | Old looper still managed items removed during replacement | Disable looping before clearing/rebuilding player queue |
 
 ## Validation and limits
@@ -54,7 +56,8 @@ Local `git diff --check` passes. CI at `4ed805b` parsed 314 Swift files with
 zero syntax failures. The isolated encoder package initially omitted its macOS
 minimum and failed an availability check; the package now targets macOS 14.
 At `a51e6fe`, all 314 Swift files parsed and all four isolated encoder tests
-passed on Xcode 26.3. Native app tests remain pending. This execution environment
+passed on Xcode 26.3. At `1e61308`, all 314 files parsed and all five encoder/download
+regressions passed. Native app tests remain pending. This execution environment
 has no Xcode or Swift
 compiler; native compilation and simulator execution are delegated to CI.
 The new independent syntax job is explicitly not a substitute for type checking,

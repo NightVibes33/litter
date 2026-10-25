@@ -165,10 +165,14 @@ final class AppLifecycleController {
         liveActivities.sync(snapshot)
         registerPushProxy()
 
+        // Multiple scenes can report backgrounding for the same controller.
+        // Never overwrite a live identifier and leak the earlier task.
+        guard backgroundTaskID == .invalid else { return }
         let bgID = UIApplication.shared.beginBackgroundTask { [weak self] in
             guard let self else { return }
             let expiredID = self.backgroundTaskID
             self.backgroundTaskID = .invalid
+            guard expiredID != .invalid else { return }
             UIApplication.shared.endBackgroundTask(expiredID)
         }
         backgroundTaskID = bgID

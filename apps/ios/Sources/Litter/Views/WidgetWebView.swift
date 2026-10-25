@@ -195,6 +195,10 @@ struct WidgetWebView: UIViewRepresentable {
             pendingHTML = nil
             heightTimer?.invalidate()
             heightTimer = nil
+            heightBinding = nil
+            onMessage = nil
+            onStructuredRequest = nil
+            queuedJS = nil
             webView = nil
         }
 
@@ -238,7 +242,7 @@ struct WidgetWebView: UIViewRepresentable {
             guard message.name == "widget" else { return }
             if let dict = message.body as? [String: Any],
                dict["_type"] as? String == "height",
-               let h = dict["value"] as? CGFloat, h > 0 {
+               let h = dict["value"] as? CGFloat, h.isFinite, h > 0 {
                 pendingHeight = h
                 heightTimer?.invalidate()
                 heightTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
@@ -246,7 +250,8 @@ struct WidgetWebView: UIViewRepresentable {
                     let finalHeight = ceil(self.pendingHeight)
                     guard abs(finalHeight - self.lastCommittedHeight) > 1 else { return }
                     self.lastCommittedHeight = finalHeight
-                    DispatchQueue.main.async {
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.webView != nil else { return }
                         self.heightBinding?.wrappedValue = finalHeight
                     }
                 }
