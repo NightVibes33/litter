@@ -26,6 +26,10 @@ class FakefsComposerContractTests(unittest.TestCase):
     def test_both_send_paths_keep_real_fakefs_mentions(self):
         self.assertIn("buildTurnInputs(attachments: importedFiles)", CONVERSATION)
         self.assertIn("buildTurnInputs(attachments: importedFiles)", HOME)
+        self.assertIn("fileAttachments: fileReferences,", CONVERSATION)
+        self.assertIn("fileAttachments: fileReferences,", HOME)
+        self.assertIn("same iSH command service", ATTACHMENT)
+        self.assertIn("IshFS.fileSize(path: path)", ATTACHMENT)
         self.assertIn("validateComposerAttachment(attachment)", HOME)
         self.assertIn("validateComposerAttachment(attachment)", CONVERSATION)
         self.assertIn("validateComposerAttachment(imported)", ATTACHMENT)

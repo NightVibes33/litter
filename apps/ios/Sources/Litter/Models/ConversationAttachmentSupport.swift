@@ -379,11 +379,31 @@ enum ConversationAttachmentSupport {
         if attachment.image != nil { return }
         guard let path = attachment.fakefsPath,
               (path.hasPrefix(composerImportDirectory + "/") ||
-               path.hasPrefix("/root/.litter/attachments/")),
-              await IshFS.exists(path: path) else {
+               path.hasPrefix("/root/.litter/attachments/")) else {
             throw NSError(domain: "ConversationAttachmentSupport", code: 7, userInfo: [
-                NSLocalizedDescriptionKey: "The imported file is missing from iSH. Reattach it before sending."
+                NSLocalizedDescriptionKey: "The ZIP is not in Alley Cãt's on-device filesystem. Reattach it from Files."
             ])
+        }
+
+        // Verify the file with the same iSH command service used by the local
+        // Codex runtime, not with iOS FileManager or a File Provider URL.
+        let quoted = IshFS.shellQuote(path)
+        let probe: String = attachment.kind == .folder
+            ? "[ -d \(quoted) ] && [ -r \(quoted) ]"
+            : "[ -f \(quoted) ] && [ -r \(quoted) ]"
+        let result = await IshFS.run(probe)
+        guard result.exitCode == 0 else {
+            throw NSError(domain: "ConversationAttachmentSupport", code: 7, userInfo: [
+                NSLocalizedDescriptionKey: "The attached \(attachment.displayName) is not readable by the on-device Linux tools. Reattach it."
+            ])
+        }
+        if attachment.kind == .archive {
+            let size = try await IshFS.fileSize(path: path)
+            guard size > 0 else {
+                throw NSError(domain: "ConversationAttachmentSupport", code: 8, userInfo: [
+                    NSLocalizedDescriptionKey: "The ZIP is empty in iSH. It was not attached."
+                ])
+            }
         }
     }
 

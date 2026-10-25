@@ -485,10 +485,13 @@ struct HomeComposerView: View {
                     additionalInputs.append(prepared.userInput)
                 }
                 additionalInputs.append(contentsOf: ConversationAttachmentSupport.buildTurnInputs(attachments: importedFiles))
+                let fileReferences = files + importedFiles.compactMap(
+                    ConversationAttachmentSupport.composerFileChip(for:)
+                )
                 let payload = AppComposerPayload(
                     text: text,
                     additionalInputs: additionalInputs,
-                    fileAttachments: files,
+                    fileAttachments: fileReferences,
                     approvalPolicy: appState.launchApprovalPolicy(for: threadKey),
                     sandboxPolicy: appState.turnSandboxPolicy(for: threadKey),
                     model: modelOverride,

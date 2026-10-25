@@ -385,10 +385,15 @@ struct ConversationView: View {
             additionalInputs.append(prepared.userInput)
         }
         additionalInputs.append(contentsOf: ConversationAttachmentSupport.buildTurnInputs(attachments: importedFiles))
+        // Codex agents also need the real path in the visible request text.
+        // Only verified iSH imports are put here; never File Provider URLs.
+        let fileReferences = fileAttachments + importedFiles.compactMap(
+            ConversationAttachmentSupport.composerFileChip(for:)
+        )
         return AppComposerPayload(
             text: text,
             additionalInputs: additionalInputs,
-            fileAttachments: fileAttachments,
+            fileAttachments: fileReferences,
             approvalPolicy: appState.launchApprovalPolicy(for: activeThreadKey),
             sandboxPolicy: appState.turnSandboxPolicy(for: activeThreadKey),
             model: pendingModelOverride,

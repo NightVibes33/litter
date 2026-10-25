@@ -228,6 +228,34 @@ final class ConversationAttachmentSupportTests: XCTestCase {
         XCTAssertFalse(prompt.contains(providerURL))
     }
 
+    func testImportedZipHasVerifiedLinuxPathInVisibleRequest() {
+        let imported = ConversationAttachment(
+            kind: .archive,
+            displayName: "Game Assets.zip",
+            detail: "imported into iSH",
+            fakefsPath: "/root/.alleycat/attachments/Game Assets.zip"
+        )
+        let chip = ConversationAttachmentSupport.composerFileChip(for: imported)
+        XCTAssertNotNil(chip)
+        let payload = AppComposerPayload(
+            text: "Inspect the ZIP",
+            additionalInputs: ConversationAttachmentSupport.buildTurnInputs(attachments: [imported]),
+            fileAttachments: [chip!],
+            approvalPolicy: nil, sandboxPolicy: nil, model: nil, effort: nil, serviceTier: nil
+        )
+        let request = payload.turnStartRequest(threadId: "local-thread")
+        guard case .text(let text, _) = request.input.first else {
+            return XCTFail("Expected the iSH file context in the text input")
+        }
+        XCTAssertTrue(text.contains("## Game Assets.zip: /root/.alleycat/attachments/Game Assets.zip"))
+        XCTAssertFalse(text.contains("/private/var/mobile/"))
+        guard case .mention(let name, let path) = request.input.last else {
+            return XCTFail("Expected a file mention alongside the visible path")
+        }
+        XCTAssertEqual(name, "Game Assets.zip")
+        XCTAssertEqual(path, "/root/.alleycat/attachments/Game Assets.zip")
+    }
+
     func testImportedFolderAndArchiveKeepRuntimePaths() {
         let files = [
             ConversationAttachment(kind: .folder, displayName: "Project", detail: "", fakefsPath: "/root/.alleycat/attachments/Project"),
