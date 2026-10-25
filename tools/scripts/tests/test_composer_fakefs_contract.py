@@ -1,0 +1,49 @@
+from pathlib import Path
+import unittest
+
+ROOT = Path(__file__).resolve().parents[3] / "apps/ios/Sources/Litter"
+CONVERSATION = (ROOT / "Views/ConversationView.swift").read_text()
+HOME = (ROOT / "Views/HomeComposerView.swift").read_text()
+MODAL = (ROOT / "Views/ConversationComposerModalCoordinator.swift").read_text()
+ATTACHMENT = (ROOT / "Models/ConversationAttachmentSupport.swift").read_text()
+
+class FakefsComposerContractTests(unittest.TestCase):
+    def test_conversation_picker_imports(self):
+        self.assertIn("onLoadSelectedFiles: importPickedURLs", CONVERSATION)
+        self.assertIn("onLoadSelectedFiles(urls)", MODAL)
+        self.assertIn("allowsMultipleSelection: true", MODAL)
+    def test_conversation_drop_imports(self):
+        self.assertIn(".dropDestination(for: URL.self)", CONVERSATION)
+        self.assertIn("importPickedURLs(urls)", CONVERSATION)
+    def test_home_picker_imports(self):
+        self.assertIn("attach.importPickedURLs(urls)", HOME)
+        self.assertIn("allowsMultipleSelection: true", HOME)
+    def test_home_drop_imports(self):
+        self.assertIn(".dropDestination(for: URL.self)", HOME)
+        self.assertGreaterEqual(HOME.count("attach.importPickedURLs(urls)"), 2)
+    def test_both_send_paths_keep_real_fakefs_mentions(self):
+        self.assertIn("buildTurnInputs(attachments: importedFiles)", CONVERSATION)
+        self.assertIn("buildTurnInputs(attachments: importedFiles)", HOME)
+        self.assertIn("validateComposerAttachment(attachment)", HOME)
+        self.assertIn("validateComposerAttachment(attachment)", CONVERSATION)
+        self.assertIn("validateComposerAttachment(imported)", ATTACHMENT)
+        self.assertIn("await IshFS.exists(path: path)", ATTACHMENT)
+        self.assertIn("private var composerFileChips", CONVERSATION)
+        self.assertIn("var composerFileChips", HOME)
+    def test_provider_urls_not_serialized_and_server_search_unchanged(self):
+        self.assertNotIn("loadPickedFile(at:", CONVERSATION)
+        self.assertNotIn("loadPickedFile(at:", HOME)
+        self.assertNotIn("path: url.path", ATTACHMENT)
+        self.assertIn("fileAttachments: files,", HOME)
+        self.assertIn("fileAttachments: fileAttachments,", CONVERSATION)
+        self.assertIn("applyFileSuggestion(_ match: FileSearchResult)", CONVERSATION)
+    def test_import_failure_keeps_draft_and_blocks_inflight_submission(self):
+        self.assertIn("pendingFileImports += 1", CONVERSATION)
+        self.assertIn("pendingFileImports += 1", HOME)
+        self.assertIn("guard pendingFileImports == 0", CONVERSATION)
+        self.assertIn("guard attach.pendingFileImports == 0", HOME)
+        self.assertIn("slashErrorMessage = \"Could not attach", CONVERSATION)
+        self.assertIn('importError = "Could not attach', HOME)
+
+if __name__ == "__main__":
+    unittest.main()

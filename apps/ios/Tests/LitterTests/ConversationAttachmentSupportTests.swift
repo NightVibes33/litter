@@ -171,15 +171,86 @@ final class ConversationAttachmentSupportTests: XCTestCase {
         )
     }
 
-    func testUnreadableNonImagePathCanStillBeMentionedAsFileAttachment() {
-        let url = URL(fileURLWithPath: "/tmp/litter-missing-file.txt")
+    func testNonImageProviderURLIsNotTurnAttachment() {
+        let url = URL(fileURLWithPath: "/private/var/mobile/Containers/Shared/AppGroup/provider-secret.txt")
+        // The synchronous, image-only legacy helper must never expose
+        // a File Provider URL as a ComposerFileAttachment.
+        XCTAssertNil(ConversationAttachmentSupport.loadPickedFile(at: url))
+    }
 
-        let picked = ConversationAttachmentSupport.loadPickedFile(at: url)
+    func testImportedComposerChipUsesFakefsPath() {
+        let imported = ConversationAttachment(
+            kind: .file,
+            displayName: "report.txt",
+            detail: "imported",
+            fakefsPath: "/root/.litter/attachments/report.txt"
+        )
+        let chip = ConversationAttachmentSupport.composerFileChip(for: imported)
+        XCTAssertEqual(chip?.path, "/root/.litter/attachments/report.txt")
+        XCTAssertEqual(chip?.label, "report.txt")
+    }
 
-        guard case .file(let attachment)? = picked else {
-            return XCTFail("Expected file attachment")
+    func testImportedFileUsesExactRuntimePathInSubmittedTurn() {
+        let providerURL = "/private/var/mobile/Containers/Shared/AppGroup/report.txt"
+        let imported = ConversationAttachment(
+            kind: .file,
+            displayName: "report.txt",
+            detail: "imported",
+            fakefsPath: "/root/.litter/attachments/report.txt"
+        )
+        let additional = ConversationAttachmentSupport.buildTurnInputs(attachments: [imported])
+        let payload = AppComposerPayload(
+            text: "Inspect the attachment",
+            additionalInputs: additional,
+            fileAttachments: [],
+            approvalPolicy: nil,
+            sandboxPolicy: nil,
+            model: nil,
+            effort: nil,
+            serviceTier: nil
+        )
+        let request = payload.turnStartRequest(threadId: "test-thread")
+        XCTAssertEqual(request.input.count, 2)
+        guard case .mention(let name, let path) = request.input[1] else {
+            return XCTFail("Expected an iSH file mention in the submitted request")
         }
-        XCTAssertEqual(attachment.label, "litter-missing-file")
-        XCTAssertEqual(attachment.path, "/tmp/litter-missing-file.txt")
+        XCTAssertEqual(name, "report.txt")
+        XCTAssertEqual(path, "/root/.litter/attachments/report.txt")
+        XCTAssertNotEqual(path, providerURL)
+        guard case .text(let prompt, _) = request.input[0] else {
+            return XCTFail("Expected user draft as first request input")
+        }
+        XCTAssertEqual(prompt, "Inspect the attachment")
+        XCTAssertFalse(prompt.contains(providerURL))
+    }
+
+    func testImportedFolderAndArchiveKeepRuntimePaths() {
+        let files = [
+            ConversationAttachment(kind: .folder, displayName: "Project", detail: "", fakefsPath: "/root/.litter/attachments/Project"),
+            ConversationAttachment(kind: .archive, displayName: "Project.zip", detail: "", fakefsPath: "/root/.litter/attachments/Project.zip")
+        ]
+        let inputs = ConversationAttachmentSupport.buildTurnInputs(attachments: files)
+        XCTAssertEqual(inputs.count, 2)
+        guard case .mention(_, let folderPath) = inputs[0],
+              case .mention(_, let archivePath) = inputs[1] else {
+            return XCTFail("Expected directory and archive file mentions")
+        }
+        XCTAssertEqual(folderPath, "/root/.litter/attachments/Project")
+        XCTAssertEqual(archivePath, "/root/.litter/attachments/Project.zip")
+    }
+
+    func testInvalidImportedPathIsRejectedBeforeSending() async {
+        let sourceURLAttachment = ConversationAttachment(
+            kind: .file,
+            displayName: "secret.txt",
+            detail: "",
+            fakefsPath: "/private/var/mobile/Containers/Shared/secret.txt"
+        )
+        do {
+            try await ConversationAttachmentSupport.validateComposerAttachment(sourceURLAttachment)
+            XCTFail("Provider path was accepted as an iSH attachment")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("missing from iSH"))
+        }
     }
 }
