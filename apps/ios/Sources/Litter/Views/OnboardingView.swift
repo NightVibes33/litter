@@ -176,7 +176,9 @@ struct OnboardingView: View {
             heroPanel(
                 systemImage: "iphone.gen3.radiowaves.left.and.right",
                 title: "Your coding workspace",
-                detail: "Alley Cãt brings AI chat, local files, a shared terminal, remote machines, and iOS build tools into one mobile workspace."
+                detail: AppDistributionCapabilities.includesEmexDE
+                    ? "Alley Cãt brings AI chat, local files, a shared terminal, remote machines, and iOS build tools into one mobile workspace."
+                    : "Alley Cãt brings AI chat, local files, a shared terminal, and remote machines into one mobile workspace."
             )
             featureGrid(welcomeFeatures)
         }
@@ -229,7 +231,9 @@ struct OnboardingView: View {
                 secondaryTitle: ExperimentalFeatures.shared.isEnabled(.terminal) ? "Open Terminal" : nil,
                 secondaryAction: { finishAndOpen { onOpenTerminal(HomeAnchor.path) } }
             )
-            demoWorkspacePanel
+            if AppDistributionCapabilities.includesEmexDE {
+                demoWorkspacePanel
+            }
         }
     }
 
@@ -609,7 +613,12 @@ private enum LitterOnboardingCheckKind: String, CaseIterable, Identifiable {
 
     static var visibleCases: [LitterOnboardingCheckKind] {
         allCases.filter { kind in
-            kind != .buildKit || AppDistributionCapabilities.includesEmexDE
+            switch kind {
+            case .paths, .buildKit:
+                return AppDistributionCapabilities.includesEmexDE
+            case .shell, .workspace, .runtime:
+                return true
+            }
         }
     }
 
@@ -687,8 +696,13 @@ private final class LitterOnboardingReadinessStore: ObservableObject {
             update(.workspace, status: .warning, detail: error.localizedDescription)
         }
 
-        let pathCheck = await IshFS.run("[ -d /root ] && [ -d /usr/local/bin ] && [ -d /root/alley-cat ]")
-        update(.paths, status: pathCheck.exitCode == 0 ? .ready : .warning, detail: pathCheck.exitCode == 0 ? "/root, /root/alley-cat, and /usr/local/bin are visible." : "/root/alley-cat or /usr/local/bin is missing. Open emexDE or Terminal if tools are unavailable.")
+        // These directories belong to the optional emexDE setup, not the
+        // chat/terminal runtime shipped in TestFlight. Do not probe or warn
+        // about absent development tools in builds that do not include them.
+        if AppDistributionCapabilities.includesEmexDE {
+            let pathCheck = await IshFS.run("[ -d /root ] && [ -d /usr/local/bin ] && [ -d /root/alley-cat ]")
+            update(.paths, status: pathCheck.exitCode == 0 ? .ready : .warning, detail: pathCheck.exitCode == 0 ? "/root, /root/alley-cat, and /usr/local/bin are visible." : "/root/alley-cat or /usr/local/bin is missing. Open emexDE or Terminal if tools are unavailable.")
+        }
 
         let connectedCount = appModel.snapshot?.servers.filter { $0.health == .connected }.count ?? 0
         if connectedCount > 0 {
