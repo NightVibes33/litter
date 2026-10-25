@@ -46,6 +46,9 @@ class FakefsComposerContractTests(unittest.TestCase):
         self.assertIn('importError = "Could not attach', HOME)
         self.assertIn("guard !preparingFileSend", CONVERSATION)
         self.assertIn("guard !isPreparingSend", HOME)
+        self.assertIn("appModel.isLocalServer", CONVERSATION)
+        self.assertIn("appModel.isLocalServer", HOME)
+        self.assertIn("fileImportGeneration", CONVERSATION)
         self.assertIn("importing", HOME.lower())
         self.assertIn("importing", CONVERSATION.lower())
 

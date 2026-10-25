@@ -383,6 +383,11 @@ struct HomeComposerView: View {
         let importedFiles = attach.importedFiles
         guard !text.isEmpty || !images.isEmpty || !files.isEmpty || !importedFiles.isEmpty else { return }
         guard !isSubmitting else { return }
+        if !importedFiles.isEmpty, let targetServerId = resolvedTranscriptionServerId,
+           !appModel.isLocalServer(serverId: targetServerId) {
+            errorMessage = "Imported iSH files cannot be sent to a remote computer. Choose an on-device project."
+            return
+        }
         let selectedProject = project
         let fallbackServerId = transcriptionServerId
         guard selectedProject != nil || fallbackServerId != nil else {

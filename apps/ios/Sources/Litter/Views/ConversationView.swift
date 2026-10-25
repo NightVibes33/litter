@@ -1330,6 +1330,7 @@ private struct ConversationInputBar: View {
     @State private var attachedFiles: [ComposerFileAttachment] = []
     @State private var importedFiles: [ConversationAttachment] = []
     @State private var pendingFileImports = 0
+    @State private var fileImportGeneration = 0
     @State private var preparingFileSend = false
     @State private var showAttachMenu = false
     @State private var showPhotoPicker = false
@@ -1480,6 +1481,7 @@ private struct ConversationInputBar: View {
             attachedImages = []
             attachedFiles = []
             importedFiles = []
+            fileImportGeneration += 1
             hideComposerPopups()
             appModel.clearComposerPrefill(id: prefill.id)
         }
@@ -1658,17 +1660,24 @@ private struct ConversationInputBar: View {
 
     private func importPickedURLs(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
+        guard appModel.isLocalServer(serverId: snapshot.threadKey.serverId) else {
+            slashErrorMessage = "Local Files attachments require the on-device iSH session. Use the remote computer's file search for remote files."
+            return
+        }
         guard !preparingFileSend else {
             slashErrorMessage = "Finish sending this turn before attaching another file."
             return
         }
         // Increment synchronously so Send cannot race the first async write.
         pendingFileImports += 1
+        let generation = fileImportGeneration
         Task { @MainActor in
             defer { pendingFileImports -= 1 }
             for url in urls {
+                guard generation == fileImportGeneration else { return }
                 do {
                     let imported = try await ConversationAttachmentSupport.importComposerURL(url)
+                    guard generation == fileImportGeneration else { return }
                     if let image = imported.image {
                         appendAttachedImage(image)
                     } else if !importedFiles.contains(where: { $0.fakefsPath == imported.fakefsPath }) {
@@ -1735,6 +1744,10 @@ private struct ConversationInputBar: View {
         let files = attachedFiles
         let imported = importedFiles
         guard !text.isEmpty || !images.isEmpty || !files.isEmpty || !imported.isEmpty else { return }
+        guard imported.isEmpty || appModel.isLocalServer(serverId: snapshot.threadKey.serverId) else {
+            slashErrorMessage = "Imported iSH files cannot be sent to a remote computer. Choose an on-device conversation."
+            return
+        }
 
         preparingFileSend = true
         Task { @MainActor in
@@ -1746,6 +1759,10 @@ private struct ConversationInputBar: View {
                 }
                 guard pendingFileImports == 0 else {
                     slashErrorMessage = "File attachment import is still in progress."
+                    return
+                }
+                guard inputText.trimmingCharacters(in: .whitespacesAndNewlines) == text else {
+                    slashErrorMessage = "Draft changed while checking attachments. Review it and send again."
                     return
                 }
                 if let request = snapshot.pendingUserInputRequest {
@@ -2119,6 +2136,7 @@ private struct ConversationInputBar: View {
         attachedImages = []
         attachedFiles = []
         importedFiles = []
+        fileImportGeneration += 1
         isComposerFocused = false
         executeSlashCommand(command, args: nil)
     }
