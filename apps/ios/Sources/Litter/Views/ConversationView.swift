@@ -1741,6 +1741,10 @@ private struct ConversationInputBar: View {
         let files = attachedFiles
         let imported = importedFiles
         guard !text.isEmpty || !images.isEmpty || !files.isEmpty || !imported.isEmpty else { return }
+        if let issue = files.compactMap({ AppComposerPayload.attachmentPathIssue($0.path, isLocal: appModel.isLocalServer(serverId: snapshot.threadKey.serverId)) }).first {
+            slashErrorMessage = issue
+            return
+        }
         guard imported.isEmpty || appModel.isLocalServer(serverId: snapshot.threadKey.serverId) else {
             slashErrorMessage = "Imported iSH files cannot be sent to a remote computer. Choose an on-device conversation."
             return

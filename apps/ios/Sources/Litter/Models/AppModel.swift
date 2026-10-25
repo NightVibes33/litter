@@ -2377,6 +2377,7 @@ final class AppModel {
     }
 
     func startTurn(key: ThreadKey, payload: AppComposerPayload) async throws {
+        try payload.validateAttachmentReferences(isLocal: isLocalServer(serverId: key.serverId))
         try await ensureLocalRuntimeIfNeeded(serverId: key.serverId)
         LLog.info("conversation", "starting turn", fields: [
             "model": payload.model ?? "server default",

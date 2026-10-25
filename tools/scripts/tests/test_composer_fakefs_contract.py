@@ -6,6 +6,8 @@ CONVERSATION = (ROOT / "Views/ConversationView.swift").read_text()
 HOME = (ROOT / "Views/HomeComposerView.swift").read_text()
 MODAL = (ROOT / "Views/ConversationComposerModalCoordinator.swift").read_text()
 ATTACHMENT = (ROOT / "Models/ConversationAttachmentSupport.swift").read_text()
+RPC = (ROOT / "Models/AppRpcParams.swift").read_text()
+APP_MODEL = (ROOT / "Models/AppModel.swift").read_text()
 
 class FakefsComposerContractTests(unittest.TestCase):
     def test_conversation_picker_imports(self):
@@ -39,6 +41,15 @@ class FakefsComposerContractTests(unittest.TestCase):
         self.assertIn("fileAttachments: files,", HOME)
         self.assertIn("fileAttachments: fileAttachments,", CONVERSATION)
         self.assertIn("applyFileSuggestion(_ match: FileSearchResult)", CONVERSATION)
+    def test_never_submit_untransferred_ios_or_fakefs_zip_to_remote(self):
+        self.assertIn("validateAttachmentReferences(isLocal:", APP_MODEL)
+        self.assertIn("The selected file is still in iPhone storage", RPC)
+        self.assertIn("not the remote Linux workspace", RPC)
+        self.assertIn("AppComposerPayload.attachmentPathIssue", CONVERSATION)
+        self.assertIn("AppComposerPayload.attachmentPathIssue", HOME)
+        self.assertIn("actualSize == expectedSize", ATTACHMENT)
+        self.assertIn("File transfer to iSH was incomplete", ATTACHMENT)
+
     def test_import_failure_keeps_draft_and_blocks_inflight_submission(self):
         self.assertIn("pendingFileImports += 1", CONVERSATION)
         self.assertIn("pendingFileImports += 1", HOME)

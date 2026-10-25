@@ -74,6 +74,51 @@ struct AppComposerPayload: Equatable, Sendable {
     var effort: ReasoningEffort?
     var serviceTier: ServiceTier?
 
+    /// Reject iPhone File Provider URLs and device-only fakefs paths before
+    /// they can become misleading file references in a remote agent turn.
+    /// File-search results already on the selected computer remain valid.
+    static func attachmentPathIssue(_ raw: String, isLocal: Bool) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let path: String
+        if trimmed.lowercased().hasPrefix("file://"),
+           let url = URL(string: trimmed) {
+            path = url.path
+        } else {
+            path = trimmed
+        }
+        let iosOnlyPrefixes = [
+            "/private/var/mobile/Containers/",
+            "/var/mobile/Containers/",
+            "/private/var/mobile/Library/Mobile Documents/",
+            "/var/mobile/Library/Mobile Documents/"
+        ]
+        if iosOnlyPrefixes.contains(where: { path.hasPrefix($0) }) {
+            return "The selected file is still in iPhone storage and has not been transferred to the agent. Attach the file again using Files."
+        }
+        let localOnlyPrefixes = [
+            "/root/.alleycat/attachments/",
+            "/root/.litter/attachments/"
+        ]
+        if !isLocal && localOnlyPrefixes.contains(where: { path.hasPrefix($0) }) {
+            return "This ZIP is in the iPhone's iSH filesystem, not the remote Linux workspace. Upload it to the remote computer before sending."
+        }
+        return nil
+    }
+
+    func validateAttachmentReferences(isLocal: Bool) throws {
+        var paths = fileAttachments.map(\.path)
+        for input in additionalInputs {
+            if case .mention(_, let path) = input {
+                paths.append(path)
+            }
+        }
+        if let issue = paths.compactMap({ Self.attachmentPathIssue($0, isLocal: isLocal) }).first {
+            throw NSError(domain: "AlleyCatAttachments", code: 101, userInfo: [
+                NSLocalizedDescriptionKey: issue
+            ])
+        }
+    }
+
     func turnStartRequest(threadId: String) -> AppStartTurnRequest {
         var inputs = additionalInputs
         let composedText = desktopStylePromptText(text: text, fileAttachments: fileAttachments)

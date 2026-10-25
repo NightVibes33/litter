@@ -431,8 +431,25 @@ enum ConversationAttachmentSupport {
         }
 
         try await IshFS.writeFile(path: targetPath, sourceURL: url, replaceExisting: false)
-        let size = Int64(resourceValues.fileSize ?? 0)
+        // The receiving agent needs the ZIP bytes, not merely a filename.
+        // Verify the committed fakefs file before exposing it as an attachment.
         let kind: ConversationAttachment.Kind = isArchiveName(targetName) ? .archive : .file
+        let expectedSize = Int64(resourceValues.fileSize ?? 0)
+        let actualSize: Int64
+        do {
+            actualSize = try await IshFS.fileSize(path: targetPath)
+        } catch {
+            try? await IshFS.delete(path: targetPath)
+            throw error
+        }
+        guard (expectedSize <= 0 || actualSize == expectedSize),
+              (kind != .archive || actualSize > 0) else {
+            try? await IshFS.delete(path: targetPath)
+            throw NSError(domain: "ConversationAttachmentSupport", code: 8, userInfo: [
+                NSLocalizedDescriptionKey: "File transfer to iSH was incomplete. The ZIP was not attached; please try again."
+            ])
+        }
+        let size = actualSize
         return ConversationAttachment(
             kind: kind,
             displayName: targetName,

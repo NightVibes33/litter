@@ -243,6 +243,42 @@ final class ConversationAttachmentSupportTests: XCTestCase {
         XCTAssertEqual(archivePath, "/root/.alleycat/attachments/Project.zip")
     }
 
+    func testProviderURLIsRejectedBeforeRemoteTurn() {
+        let originalURL = "/private/var/mobile/Containers/Shared/AppGroup/sample.zip"
+        let payload = AppComposerPayload(
+            text: "Inspect this ZIP",
+            additionalInputs: [],
+            fileAttachments: [ComposerFileAttachment(label: "sample.zip", path: originalURL)],
+            approvalPolicy: nil, sandboxPolicy: nil, model: nil, effort: nil, serviceTier: nil
+        )
+        XCTAssertThrowsError(try payload.validateAttachmentReferences(isLocal: false)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("iPhone storage"))
+        }
+    }
+
+    func testDeviceFakefsPathIsRejectedForRemoteAgent() {
+        let payload = AppComposerPayload(
+            text: "Open ZIP",
+            additionalInputs: [.mention(name: "sample.zip", path: "/root/.alleycat/attachments/sample.zip")],
+            fileAttachments: [],
+            approvalPolicy: nil, sandboxPolicy: nil, model: nil, effort: nil, serviceTier: nil
+        )
+        XCTAssertThrowsError(try payload.validateAttachmentReferences(isLocal: false)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("remote Linux workspace"))
+        }
+        XCTAssertNoThrow(try payload.validateAttachmentReferences(isLocal: true))
+    }
+
+    func testRemoteFileSearchPathStaysValid() {
+        let payload = AppComposerPayload(
+            text: "Read this file",
+            additionalInputs: [],
+            fileAttachments: [ComposerFileAttachment(label: "sample.zip", path: "/home/agent/work/project/sample.zip")],
+            approvalPolicy: nil, sandboxPolicy: nil, model: nil, effort: nil, serviceTier: nil
+        )
+        XCTAssertNoThrow(try payload.validateAttachmentReferences(isLocal: false))
+    }
+
     func testInvalidImportedPathIsRejectedBeforeSending() async {
         let sourceURLAttachment = ConversationAttachment(
             kind: .file,
