@@ -2379,6 +2379,9 @@ final class AppModel {
     func startTurn(key: ThreadKey, payload: AppComposerPayload) async throws {
         try payload.validateAttachmentReferences(isLocal: isLocalServer(serverId: key.serverId))
         try await ensureLocalRuntimeIfNeeded(serverId: key.serverId)
+        let localAttachmentContext = isLocalServer(serverId: key.serverId)
+            ? try await ConversationAttachmentSupport.verifiedLocalAttachmentContext(for: payload)
+            : nil
         LLog.info("conversation", "starting turn", fields: [
             "model": payload.model ?? "server default",
             "effort": payload.effort.map { String(describing: $0) } ?? "default",
@@ -2394,7 +2397,7 @@ final class AppModel {
         do {
             try await store.startTurn(
                 key: key,
-                params: payload.turnStartRequest(threadId: key.threadId)
+                params: payload.turnStartRequest(threadId: key.threadId, localAttachmentContext: localAttachmentContext)
             )
         } catch {
             lastError = error.localizedDescription

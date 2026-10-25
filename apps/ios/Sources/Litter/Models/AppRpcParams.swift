@@ -119,9 +119,12 @@ struct AppComposerPayload: Equatable, Sendable {
         }
     }
 
-    func turnStartRequest(threadId: String) -> AppStartTurnRequest {
+    func turnStartRequest(threadId: String, localAttachmentContext: String? = nil) -> AppStartTurnRequest {
         var inputs = additionalInputs
-        let composedText = desktopStylePromptText(text: text, fileAttachments: fileAttachments)
+        var composedText = desktopStylePromptText(text: text, fileAttachments: fileAttachments)
+        if let localAttachmentContext, !localAttachmentContext.isEmpty {
+            composedText += "\n\n" + localAttachmentContext
+        }
         if !composedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             inputs.insert(.text(text: composedText, textElements: []), at: 0)
         }

@@ -434,6 +434,50 @@ enum ConversationAttachmentSupport {
         return ComposerFileAttachment(label: attachment.displayName, path: path)
     }
 
+    /// Probe through the same iSH shell the local agent uses, including when
+    /// resuming an older chat. Native iPhone URL visibility is not sufficient.
+    static func verifiedLocalAttachmentContext(for payload: AppComposerPayload) async throws -> String? {
+        var paths = payload.fileAttachments.map(\.path)
+        for input in payload.additionalInputs {
+            if case .mention(_, let path) = input { paths.append(path) }
+        }
+        var seen = Set<String>()
+        var verified: [String] = []
+        for path in paths {
+            guard path.hasPrefix(composerImportDirectory + "/") ||
+                    path.hasPrefix("/root/.litter/attachments/"),
+                  seen.insert(path).inserted else { continue }
+            try Task.checkCancellation()
+            let quotedPath = IshFS.shellQuote(path)
+            let result = await IshFS.run("""
+            if [ -d \(quotedPath) ]; then
+              [ -r \(quotedPath) ] && [ -x \(quotedPath) ] || exit 2
+              printf directory
+            else
+              [ -f \(quotedPath) ] && [ -r \(quotedPath) ] || exit 2
+              wc -c < \(quotedPath)
+            fi
+            """)
+            let probe = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard result.exitCode == 0,
+                  probe == "directory" || Int64(probe).map({ $0 >= 0 }) == true else {
+                throw NSError(domain: "ConversationAttachmentSupport", code: 9, userInfo: [
+                    NSLocalizedDescriptionKey: "The attached file could not be read by the on-device tools. Attach it again before sending."
+                ])
+            }
+            // JSON quoting preserves spaces/newlines without turning a filename
+            // into instructions. The shell probe also reads every file byte.
+            let encodedPath = String(decoding: try JSONEncoder().encode(path), as: UTF8.self)
+            verified.append("- \(encodedPath): \(probe == "directory" ? "readable directory" : "\(probe) bytes read successfully")")
+        }
+        guard !verified.isEmpty else { return nil }
+        return """
+        [Alley Cat local attachment verification]
+        These attachments have been copied into the persistent on-device iSH Alpine filesystem and verified through its shell immediately before this turn. Your local shell tools access this same filesystem. Use the exact paths below to inspect the files, including ZIP archives. They are iSH paths, not iPhone File Provider URLs. Check them with the shell before reporting an access problem.
+        \(verified.joined(separator: "\n"))
+        """
+    }
+
     static func buildTurnInputs(text: String, additionalInput: [AppUserInput]) -> [AppUserInput] {
         var inputs: [AppUserInput] = []
         if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

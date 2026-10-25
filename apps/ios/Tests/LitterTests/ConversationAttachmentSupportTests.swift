@@ -302,6 +302,28 @@ final class ConversationAttachmentSupportTests: XCTestCase {
         XCTAssertEqual(archivePath, "/root/.alleycat/attachments/Project.zip")
     }
 
+    func testVerifiedLocalContextReachesTurnWithoutDroppingZipMention() {
+        let path = "/root/.alleycat/attachments/Project.zip"
+        let payload = AppComposerPayload(
+            text: "Inspect this ZIP", additionalInputs: [.mention(name: "Project.zip", path: path)],
+            fileAttachments: [], approvalPolicy: nil, sandboxPolicy: nil,
+            model: nil, effort: nil, serviceTier: nil
+        )
+        let context = "Verified on-device iSH file: \(path), 123 bytes"
+        let request = payload.turnStartRequest(threadId: "existing-chat", localAttachmentContext: context)
+        guard case .text(let text, _) = request.input[0],
+              case .mention(_, let submittedPath) = request.input[1] else {
+            return XCTFail("Expected request and ZIP mention")
+        }
+        XCTAssertTrue(text.hasPrefix("Inspect this ZIP"))
+        XCTAssertTrue(text.contains(context))
+        XCTAssertEqual(submittedPath, path)
+        guard case .text(let remoteText, _) = payload.turnStartRequest(threadId: "remote").input[0] else {
+            return XCTFail("Expected remote request text")
+        }
+        XCTAssertEqual(remoteText, "Inspect this ZIP")
+    }
+
     func testProviderURLIsRejectedBeforeRemoteTurn() {
         let originalURL = "/private/var/mobile/Containers/Shared/AppGroup/sample.zip"
         let payload = AppComposerPayload(
