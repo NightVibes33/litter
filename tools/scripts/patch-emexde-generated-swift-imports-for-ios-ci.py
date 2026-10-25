@@ -161,10 +161,19 @@ application_management_objc_shim = "\n".join([
     "- (void)applicationWithBundleIdentifierWasUninstalled:(NSString *)bundleIdentifier;",
     "@end",
 ])
+# The declarations below describe the real Swift class compiled from
+# upstream SlotEntry.swift. This is only the Objective-C interface, not an
+# alternate implementation of Nyxian's extension state.
+nxapplicationstate_objc_interface = "\n".join([
+    "@interface NXApplicationState : NSObject",
+    "+ (BOOL)extensionLessMode;",
+    "@end",
+])
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXBootstrap.m",
-    '#import <LindChain/ProcEnvironment/Surface/trust/keychain.h>\n' + notification_objc_shim,
-    "NXBootstrap notification bridge",
+    '#import <LindChain/ProcEnvironment/Surface/trust/keychain.h>\n' +
+    notification_objc_shim + "\n" + nxapplicationstate_objc_interface,
+    "NXBootstrap upstream NXApplicationState interface",
 )
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/PEProcessManager.m",
@@ -234,29 +243,21 @@ ensure_liveprocess_info_plist_metadata()
 # version marker advances. Replace from the same upstream download atomically.
 bootstrap = Path("ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXBootstrap.m")
 bootstrap_text = bootstrap.read_text()
-# NXBootstrap is compiled as Objective-C before the generated Nyxian-Swift.h
-# exists. Our import shim intentionally removes that header, but the upstream
-# bootstrap still references NXApplicationState.extensionLessMode. Use the
-# *same* underlying checks as upstream SlotEntry.swift, without introducing
-# a fake Objective-C class or an unresolved Swift runtime symbol.
-extension_mode_swift = "if(!NXApplicationState.extensionLessMode)"
-extension_mode_native = "if(PEGetLiveProcessBundle() != nil && PEExtensionHasGetTaskAllowed())"
-extension_header = "#import <LindChain/ProcEnvironment/PEExtension.h>"
-if extension_mode_swift in bootstrap_text:
-    if extension_header not in bootstrap_text:
-        import_anchor = "#import <LindChain/ProcEnvironment/Surface/trust/keychain.h>"
-        if import_anchor not in bootstrap_text:
-            raise SystemExit("Missing expected NXBootstrap keychain import")
-        bootstrap_text = bootstrap_text.replace(
-            import_anchor, extension_header + "\n" + import_anchor, 1
-        )
-    bootstrap_text = bootstrap_text.replace(
-        extension_mode_swift, extension_mode_native, 1
-    )
-elif extension_mode_native not in bootstrap_text:
-    raise SystemExit("Missing expected NXBootstrap extension-mode guard")
-if extension_header not in bootstrap_text:
-    raise SystemExit("NXBootstrap extension-state declarations are unavailable")
+# Preserve upstream Nyxian's original extension decision. The Objective-C
+# interface above calls the actual Swift NXApplicationState defined in
+# SlotEntry.swift; no C reimplementation, stubs, or behavioral bypasses.
+if "if(!NXApplicationState.extensionLessMode)" not in bootstrap_text:
+    raise SystemExit("Upstream NXBootstrap extension-mode check was altered")
+swift_state_path = Path("ThirdParty/EmexDE/Source/Nyxian/UI/SlotEntry.swift")
+swift_state = swift_state_path.read_text()
+original_state = "@objc class NXApplicationState: NSObject {"
+named_state = "@objc(NXApplicationState) class NXApplicationState: NSObject {"
+if original_state in swift_state:
+    # Stable Objective-C runtime class name for same-target ObjC compilation.
+    # The Swift implementation and all original properties stay unchanged.
+    swift_state_path.write_text(swift_state.replace(original_state, named_state, 1))
+elif named_state not in swift_state:
+    raise SystemExit("Missing actual upstream NXApplicationState Swift class")
 # Standalone Nyxian owns all of Documents; embedded Nyxian must own only a
 # child directory because upstream failure recovery clears rootURL entirely.
 old_root = 'stringByAppendingPathComponent:@"Documents"]];'
