@@ -248,7 +248,7 @@ if extension_mode_swift in bootstrap_text:
         if import_anchor not in bootstrap_text:
             raise SystemExit("Missing expected NXBootstrap keychain import")
         bootstrap_text = bootstrap_text.replace(
-            import_anchor, extension_header + "\\n" + import_anchor, 1
+            import_anchor, extension_header + "\n" + import_anchor, 1
         )
     bootstrap_text = bootstrap_text.replace(
         extension_mode_swift, extension_mode_native, 1
