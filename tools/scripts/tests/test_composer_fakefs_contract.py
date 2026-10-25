@@ -16,11 +16,11 @@ class FakefsComposerContractTests(unittest.TestCase):
         self.assertIn(".dropDestination(for: URL.self)", CONVERSATION)
         self.assertIn("importPickedURLs(urls)", CONVERSATION)
     def test_home_picker_imports(self):
-        self.assertIn("attach.importPickedURLs(urls)", HOME)
+        self.assertIn("attach.importPickedURLs(urls, allowFileImport: allowFileImport)", HOME)
         self.assertIn("allowsMultipleSelection: true", HOME)
     def test_home_drop_imports(self):
         self.assertIn(".dropDestination(for: URL.self)", HOME)
-        self.assertGreaterEqual(HOME.count("attach.importPickedURLs(urls)"), 2)
+        self.assertIn("attach.importPickedURLs(urls, allowFileImport: allowsLocalFileImports)", HOME)
     def test_both_send_paths_keep_real_fakefs_mentions(self):
         self.assertIn("buildTurnInputs(attachments: importedFiles)", CONVERSATION)
         self.assertIn("buildTurnInputs(attachments: importedFiles)", HOME)

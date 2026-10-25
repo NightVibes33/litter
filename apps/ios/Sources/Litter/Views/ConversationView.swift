@@ -1660,10 +1660,7 @@ private struct ConversationInputBar: View {
 
     private func importPickedURLs(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
-        guard appModel.isLocalServer(serverId: snapshot.threadKey.serverId) else {
-            slashErrorMessage = "Local Files attachments require the on-device iSH session. Use the remote computer's file search for remote files."
-            return
-        }
+        let allowFileImport = appModel.isLocalServer(serverId: snapshot.threadKey.serverId)
         guard !preparingFileSend else {
             slashErrorMessage = "Finish sending this turn before attaching another file."
             return
@@ -1676,7 +1673,7 @@ private struct ConversationInputBar: View {
             for url in urls {
                 guard generation == fileImportGeneration else { return }
                 do {
-                    let imported = try await ConversationAttachmentSupport.importComposerURL(url)
+                    let imported = try await ConversationAttachmentSupport.importComposerURL(url, allowFileImport: allowFileImport)
                     guard generation == fileImportGeneration else { return }
                     if let image = imported.image {
                         appendAttachedImage(image)

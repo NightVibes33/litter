@@ -57,7 +57,7 @@ final class HomeComposerAttachmentState {
         importedFiles.removeAll { $0.fakefsPath == file.path }
     }
 
-    func importPickedURLs(_ urls: [URL]) {
+    func importPickedURLs(_ urls: [URL], allowFileImport: Bool) {
         guard !urls.isEmpty else { return }
         guard !isPreparingSend else {
             importError = "Finish sending this turn before attaching another file."
@@ -69,7 +69,7 @@ final class HomeComposerAttachmentState {
             defer { pendingFileImports -= 1 }
             for url in urls {
                 do {
-                    let imported = try await ConversationAttachmentSupport.importComposerURL(url)
+                    let imported = try await ConversationAttachmentSupport.importComposerURL(url, allowFileImport: allowFileImport)
                     if let image = imported.image {
                         appendImage(image)
                     } else if !importedFiles.contains(where: { $0.fakefsPath == imported.fakefsPath }) {
@@ -115,6 +115,7 @@ final class HomeComposerAttachmentState {
 /// which SwiftUI compares pointer-wise and then skips the update entirely.
 private struct HomeComposerPresentationHost: View {
     @Bindable var attach: HomeComposerAttachmentState
+    let allowFileImport: Bool
 
     private var attachSheetDetentHeight: CGFloat {
         let showsCamera = !LitterPlatform.isCatalyst
@@ -156,7 +157,7 @@ private struct HomeComposerPresentationHost: View {
             ) { result in
                 switch result {
                 case .success(let urls):
-                    if !urls.isEmpty { attach.importPickedURLs(urls) }
+                    if !urls.isEmpty { attach.importPickedURLs(urls, allowFileImport: allowFileImport) }
                 case .failure(let error):
                     attach.importError = "Could not select a file: \(error.localizedDescription)"
                 }
@@ -227,6 +228,11 @@ struct HomeComposerView: View {
 
     private var resolvedTranscriptionServerId: String? {
         project?.serverId ?? transcriptionServerId
+    }
+
+    private var allowsLocalFileImports: Bool {
+        guard let serverId = resolvedTranscriptionServerId else { return false }
+        return appModel.isLocalServer(serverId: serverId)
     }
 
     private var isActive: Bool {
@@ -334,7 +340,7 @@ struct HomeComposerView: View {
         }
         .dropDestination(for: URL.self) { urls, _ in
             guard !urls.isEmpty else { return false }
-            attach.importPickedURLs(urls)
+            attach.importPickedURLs(urls, allowFileImport: allowsLocalFileImports)
             return true
         }
         .dropDestination(for: Data.self) { items, _ in
@@ -348,7 +354,7 @@ struct HomeComposerView: View {
         // All attachment presentation lives behind a stable object reference so
         // the sheet/picker/importer/cover chain is not rebuilt per keystroke.
         .background {
-            HomeComposerPresentationHost(attach: attach)
+            HomeComposerPresentationHost(attach: attach, allowFileImport: allowsLocalFileImports)
         }
         .environment(
             \.composerPermissionContext,

@@ -351,12 +351,16 @@ enum ConversationAttachmentSupport {
     /// Local picker/drop files must be copied to the fakefs before attaching.
     static let composerImportDirectory = "/root/.litter/attachments"
 
-    static func importComposerURL(_ url: URL) async throws -> ConversationAttachment {
-        if isPhotosLibraryInternalURL(url) {
+    static func importComposerURL(_ url: URL, allowFileImport: Bool = true) async throws -> ConversationAttachment {
+        if isPhotosLibraryInternalURL(url) || !allowFileImport {
+            // Remote agents can accept image bytes, but cannot dereference a
+            // local iSH path. Never import a remote session's non-image file.
             guard case let .image(image)? = loadPickedFile(at: url),
                   let attachment = imageAttachment(image, name: url.lastPathComponent) else {
                 throw NSError(domain: "ConversationAttachmentSupport", code: 6, userInfo: [
-                    NSLocalizedDescriptionKey: "Could not read the selected Photos image."
+                    NSLocalizedDescriptionKey: allowFileImport
+                        ? "Could not read the selected Photos image."
+                        : "Local files require an on-device iSH conversation. Remote sessions can attach images or reference files on their computer."
                 ])
             }
             return attachment
