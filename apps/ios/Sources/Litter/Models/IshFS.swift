@@ -109,9 +109,10 @@ enum IshFS {
     set -eu
     backup="/root/.alleycat-migration-backup-$(date +%Y%m%d%H%M%S)-$"
     merge_contents() {
-      src="$1"
-      dst="$2"
-      relative="$3"
+      # BusyBox ash supports local variables. These must be scoped because
+      # nested directory merges recurse and would otherwise overwrite the
+      # parent loop's src/dst/relative paths.
+      local src="$1" dst="$2" relative="$3" entry name target
       for entry in "$src"/* "$src"/.[!.]* "$src"/..?*; do
         [ -e "$entry" ] || [ -L "$entry" ] || continue
         name=$(basename "$entry")
