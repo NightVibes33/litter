@@ -1357,7 +1357,7 @@ private final class LocalFileWorkspaceModel {
             let canonical = IshFS.canonicalAlleyCatPath(path)
             let loadedEntries = try await IshFS.listDirectory(path: canonical, includeHidden: showHidden)
             guard revision == reloadRevision, !Task.isCancelled else { return }
-            entries = loadedEntries
+            entries = loadedEntries.filter { !Self.isLegacyCompatibilityAlias($0) }
             currentPath = canonical
             selectedPaths = selectedPaths.intersection(Set(entries.map(\.path)))
         } catch {
@@ -1365,6 +1365,19 @@ private final class LocalFileWorkspaceModel {
             // Keep the previous folder and its matching entries on failure.
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Hide only exact links installed by the Alley Cat fakefs migration.
+    /// Do not hide real user-owned folders named "litter" or unrelated links.
+    private static func isLegacyCompatibilityAlias(_ entry: LocalFileEntry) -> Bool {
+        guard entry.kind == .symlink, let target = entry.linkTarget else { return false }
+        let aliases: [String: String] = [
+            "/root/.litter": "/root/.alleycat",
+            "/root/litter": "/root/alley-cat",
+            "/root/.cache/litter": "/root/.cache/alleycat",
+            "/root/.litter-fakefs-version": "/root/.alleycat-fakefs-version"
+        ]
+        return aliases[entry.path] == target
     }
 
     func open(_ entry: LocalFileEntry) async {

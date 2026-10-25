@@ -26,6 +26,8 @@ class LocalFilesContractTests(unittest.TestCase):
         self.assertIn("IshFS.isSupportedBuildManifest(entry.name)", VIEW)
         self.assertIn("join(name: IshFS.publicBuildManifestName)", VIEW)
         self.assertIn("IshFS.legacyBuildManifestName", VIEW)
+        self.assertIn("loadedEntries.filter { !Self.isLegacyCompatibilityAlias($0) }", VIEW)
+        self.assertIn('entry.kind == .symlink, let target = entry.linkTarget', VIEW)
         self.assertIn("JSONSerialization.data(withJSONObject:", VIEW)
 
     def test_file_actions_handle_symlinks_and_import_batching(self):
