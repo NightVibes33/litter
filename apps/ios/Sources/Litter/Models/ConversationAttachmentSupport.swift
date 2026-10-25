@@ -301,7 +301,7 @@ enum ConversationAttachmentSupport {
             return String(text[matchRange])
         }
     }
-    static let supportedFileContentTypes: [UTType] = [.data]
+    static let supportedFileContentTypes: [UTType] = [.item, .folder]
 
     static func prepareImage(_ image: UIImage) -> PreparedImageAttachment? {
         let imageForUpload = resizedImageIfNeeded(image, maxPixelSize: attachmentMaxPixelSize) ?? image
@@ -343,12 +343,48 @@ enum ConversationAttachmentSupport {
             return .image(image)
         }
 
-        return .file(
-            ComposerFileAttachment(
-                label: fileLabel(for: url),
-                path: url.path
-            )
+        // A File Provider URL may only be readable during its security scope.
+        // Never add the provider path to an outgoing turn.
+        return nil
+    }
+
+    /// Local picker/drop files must be copied to the fakefs before attaching.
+    static let composerImportDirectory = "/root/.litter/attachments"
+
+    static func importComposerURL(_ url: URL) async throws -> ConversationAttachment {
+        if isPhotosLibraryInternalURL(url) {
+            guard case let .image(image)? = loadPickedFile(at: url),
+                  let attachment = imageAttachment(image, name: url.lastPathComponent) else {
+                throw NSError(domain: "ConversationAttachmentSupport", code: 6, userInfo: [
+                    NSLocalizedDescriptionKey: "Could not read the selected Photos image."
+                ])
+            }
+            return attachment
+        }
+        let imported = try await importURLToFakeFS(
+            url: url,
+            destinationDirectory: composerImportDirectory,
+            preserveFakefsDestination: true
         )
+        try await validateComposerAttachment(imported)
+        return imported
+    }
+
+    /// Both the initial import and send path verify the real on-device file.
+    static func validateComposerAttachment(_ attachment: ConversationAttachment) async throws {
+        if attachment.image != nil { return }
+        guard let path = attachment.fakefsPath,
+              path.hasPrefix(composerImportDirectory + "/"),
+              await IshFS.exists(path: path) else {
+            throw NSError(domain: "ConversationAttachmentSupport", code: 7, userInfo: [
+                NSLocalizedDescriptionKey: "The imported file is missing from iSH. Reattach it before sending."
+            ])
+        }
+    }
+
+    static func composerFileChip(for attachment: ConversationAttachment) -> ComposerFileAttachment? {
+        guard let path = attachment.fakefsPath else { return nil }
+        return ComposerFileAttachment(label: attachment.displayName, path: path)
     }
 
     static func buildTurnInputs(text: String, additionalInput: [AppUserInput]) -> [AppUserInput] {
@@ -626,7 +662,6 @@ enum ConversationAttachmentSupport {
 
 enum PickedComposerFile {
     case image(UIImage)
-    case file(ComposerFileAttachment)
 }
 
 private extension UIImage {

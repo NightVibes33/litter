@@ -28,7 +28,7 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
     @Binding var showMicPermissionAlert: Bool
     let onOpenSettings: () -> Void
     let onLoadSelectedPhotos: ([PhotosPickerItem]) async -> Void
-    let onLoadSelectedFile: (URL) -> Void
+    let onLoadSelectedFiles: ([URL]) -> Void
     let onLoadExperimentalFeatures: () async -> Void
     let onIsExperimentalFeatureEnabled: (String, Bool) -> Bool
     let onSetExperimentalFeature: (String, Bool) async -> Void
@@ -186,11 +186,10 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
             .fileImporter(
                 isPresented: $showFileImporter,
                 allowedContentTypes: ConversationAttachmentSupport.supportedFileContentTypes,
-                allowsMultipleSelection: false
+                allowsMultipleSelection: true
             ) { result in
-                guard case let .success(urls) = result,
-                      let url = urls.first else { return }
-                onLoadSelectedFile(url)
+                guard case let .success(urls) = result, !urls.isEmpty else { return }
+                onLoadSelectedFiles(urls)
             }
             .onChange(of: selectedPhotos) { _, items in
                 guard !items.isEmpty else { return }
