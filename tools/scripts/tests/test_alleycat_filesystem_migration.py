@@ -22,7 +22,7 @@ def migration_script(fake_root: Path) -> str:
     # Rebase ALL app-owned /root paths into the private fixture. No test code
     # should ever execute the migration against a real device/root filesystem.
     script = re.sub(
-        r'(?<![\w/])/root(?=/|[\s"'\''"]|$)',
+        r'(?<![\w/])/root(?=/|\s|$)',
         str(fake_root),
         script,
     )
