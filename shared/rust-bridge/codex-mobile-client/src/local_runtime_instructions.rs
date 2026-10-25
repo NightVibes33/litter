@@ -2,19 +2,23 @@ use crate::MobileClient;
 
 #[cfg(any(all(target_os = "ios", not(target_abi = "macabi")), test))]
 const IOS_LOCAL_RUNTIME_SENTINEL: &str =
+    "You are running inside Alley Cat's local Codex runtime on iOS.";
+
+#[cfg(any(all(target_os = "ios", not(target_abi = "macabi")), test))]
+const LEGACY_IOS_LOCAL_RUNTIME_SENTINEL: &str =
     "You are running inside Litter's local Codex runtime on iOS.";
 
 #[cfg(any(all(target_os = "ios", not(target_abi = "macabi")), test))]
-pub(crate) const IOS_LOCAL_RUNTIME_DEVELOPER_INSTRUCTIONS: &str = r#"You are running inside Litter's local Codex runtime on iOS.
+pub(crate) const IOS_LOCAL_RUNTIME_DEVELOPER_INSTRUCTIONS: &str = r#"You are running inside Alley Cat's local Codex runtime on iOS.
 
 The shell tool is backed by a persistent iSH Alpine Linux fakefs, not the iOS host filesystem or ios_system. Treat paths, packages, and command behavior as Alpine Linux inside iSH.
 
 - The default home and working directory is `/root` inside the iSH fakefs.
-- `/root/.codex` is bridged to Litter's native Codex home. Skills installed under `$CODEX_HOME/skills` from the terminal are written to the same skills directory the app runtime reads; restart or reload Codex if a new skill does not appear immediately.
+- `/root/.codex` is bridged to Alley Cat's native Codex home. Skills installed under `$CODEX_HOME/skills` from the terminal are written to the same skills directory the app runtime reads; restart or reload Codex if a new skill does not appear immediately.
 - Use POSIX `/bin/sh` and Alpine/BusyBox userland expectations. Bash, zsh, and macOS tools may be absent unless installed in the fakefs.
 - Use Alpine's `apk` package manager when installing packages is necessary and permitted.
 - The iSH fakefs cannot see arbitrary iOS app sandbox paths such as `/var`, `/private`, `/Users`, `/Library`, `/System`, or `/Applications`. Work under fakefs paths such as `/root`, or app-provided bridge mounts such as `/mnt/apps` and `/root/.codex`.
-- Do not assume ios_system-specific behavior for local commands."#;
+- Files and ZIP attachments from the iPhone Files picker are copied into `/root/.alleycat/attachments/` in the SAME iSH Alpine filesystem that backs the local shell. Treat the supplied absolute attachment path as a real file. Check `ls -l` or `unzip -l` before claiming an imported file is inaccessible. The original iPhone File Provider path is not accessible.\n- Do not assume ios_system-specific behavior for local commands."#;
 
 pub(crate) fn splice_local_runtime_developer_instructions(
     client: &MobileClient,
@@ -31,7 +35,11 @@ pub(crate) fn splice_local_runtime_developer_instructions(
 
     if existing
         .as_deref()
-        .is_some_and(|value| value.contains(sentinel))
+        .is_some_and(|value| {
+            value.contains(sentinel) ||
+            (value.contains(LEGACY_IOS_LOCAL_RUNTIME_SENTINEL) &&
+             value.contains("/root/.alleycat/attachments/"))
+        })
     {
         return existing;
     }
