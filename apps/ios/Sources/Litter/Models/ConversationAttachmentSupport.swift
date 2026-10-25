@@ -36,6 +36,8 @@ struct ConversationAttachment: Identifiable {
     var detail: String
     var image: UIImage?
     var fakefsPath: String?
+    var remotePath: String?
+    var remoteByteCount: UInt64?
 
     init(
         id: UUID = UUID(),
@@ -43,7 +45,9 @@ struct ConversationAttachment: Identifiable {
         displayName: String,
         detail: String,
         image: UIImage? = nil,
-        fakefsPath: String? = nil
+        fakefsPath: String? = nil,
+        remotePath: String? = nil,
+        remoteByteCount: UInt64? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -51,6 +55,8 @@ struct ConversationAttachment: Identifiable {
         self.detail = detail
         self.image = image
         self.fakefsPath = fakefsPath
+        self.remotePath = remotePath
+        self.remoteByteCount = remoteByteCount
     }
 }
 
@@ -135,7 +141,7 @@ enum ConversationAttachmentSupport {
             if let image = attachment.image {
                 return prepareImage(image)?.userInput
             }
-            guard let path = attachment.fakefsPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+            guard let path = (attachment.remotePath ?? attachment.fakefsPath)?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !path.isEmpty else { return nil }
             return .mention(name: attachment.displayName, path: path)
         }
@@ -373,6 +379,55 @@ enum ConversationAttachmentSupport {
     /// Local picker/drop files must be copied to the fakefs before attaching.
     static let composerImportDirectory = IshFS.composerAttachmentsRoot
 
+    /// SSH-backed agents need the bytes on their computer, not an iOS path.
+    static func importComposerSSHURL(_ url: URL, ssh: SshBridge, sessionId: String) async throws -> ConversationAttachment {
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        if isLikelyImage(url), let image = loadImageFile(at: url),
+           let attachment = imageAttachment(image, name: url.lastPathComponent) {
+            return attachment
+        }
+        let info = try url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
+        guard info.isDirectory != true else {
+            throw NSError(domain: "ConversationAttachmentSupport", code: 11, userInfo: [
+                NSLocalizedDescriptionKey: "Compress folders into a ZIP before attaching them to a remote SSH agent."
+            ])
+        }
+        let file = try FileHandle(forReadingFrom: url)
+        defer { try? file.close() }
+        let remotePath = try await ssh.sshAttachmentBegin(sessionId: sessionId, name: url.lastPathComponent)
+        do {
+            var size: UInt64 = 0
+            while true {
+                try Task.checkCancellation()
+                let chunk = try file.read(upToCount: 128 * 1024) ?? Data()
+                if chunk.isEmpty { break }
+                try await ssh.sshAttachmentAppend(
+                    sessionId: sessionId, remotePath: remotePath,
+                    contentBase64: chunk.base64EncodedString()
+                )
+                size += UInt64(chunk.count)
+            }
+            guard size > 0,
+                  info.fileSize.map({ $0 >= 0 && UInt64($0) == size }) ?? true else {
+                throw NSError(domain: "ConversationAttachmentSupport", code: 12, userInfo: [
+                    NSLocalizedDescriptionKey: "ZIP upload incomplete. The agent was not given a file reference."
+                ])
+            }
+            try await ssh.sshAttachmentVerify(sessionId: sessionId, remotePath: remotePath, expectedSize: size)
+            return ConversationAttachment(
+                kind: isArchiveName(url.lastPathComponent) ? .archive : .file,
+                displayName: url.lastPathComponent,
+                detail: "Transferred to SSH agent (\(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)))",
+                remotePath: remotePath,
+                remoteByteCount: size
+            )
+        } catch {
+            try? await ssh.sshAttachmentCancel(sessionId: sessionId, remotePath: remotePath)
+            throw error
+        }
+    }
+
     static func importComposerURL(_ url: URL, allowFileImport: Bool = true) async throws -> ConversationAttachment {
         if isPhotosLibraryInternalURL(url) || !allowFileImport {
             // Remote agents can accept image bytes, but cannot dereference a
@@ -397,8 +452,19 @@ enum ConversationAttachmentSupport {
     }
 
     /// Both the initial import and send path verify the real on-device file.
-    static func validateComposerAttachment(_ attachment: ConversationAttachment) async throws {
+    static func validateComposerAttachment(
+        _ attachment: ConversationAttachment, ssh: SshBridge? = nil, sshSessionId: String? = nil
+    ) async throws {
         if attachment.image != nil { return }
+        if let remotePath = attachment.remotePath {
+            guard let ssh, let sshSessionId, let size = attachment.remoteByteCount, size > 0 else {
+                throw NSError(domain: "ConversationAttachmentSupport", code: 10, userInfo: [
+                    NSLocalizedDescriptionKey: "SSH connection lost. Reconnect and attach the ZIP again."
+                ])
+            }
+            try await ssh.sshAttachmentVerify(sessionId: sshSessionId, remotePath: remotePath, expectedSize: size)
+            return
+        }
         guard let path = attachment.fakefsPath,
               (path.hasPrefix(composerImportDirectory + "/") ||
                path.hasPrefix("/root/.litter/attachments/")) else {
@@ -430,7 +496,7 @@ enum ConversationAttachmentSupport {
     }
 
     static func composerFileChip(for attachment: ConversationAttachment) -> ComposerFileAttachment? {
-        guard let path = attachment.fakefsPath else { return nil }
+        guard let path = attachment.remotePath ?? attachment.fakefsPath else { return nil }
         return ComposerFileAttachment(label: attachment.displayName, path: path)
     }
 
