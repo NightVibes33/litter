@@ -26,6 +26,9 @@ class FakefsComposerContractTests(unittest.TestCase):
     def test_both_send_paths_keep_real_fakefs_mentions(self):
         self.assertIn("buildTurnInputs(attachments: importedFiles)", CONVERSATION)
         self.assertIn("buildTurnInputs(attachments: importedFiles)", HOME)
+        self.assertIn("localRuntimeFileAccessInput(attachments: importedFiles)", CONVERSATION)
+        self.assertIn("localRuntimeFileAccessInput(attachments: importedFiles)", HOME)
+        self.assertIn("available to your local shell tools", ATTACHMENT)
         self.assertIn("fileAttachments: fileReferences,", CONVERSATION)
         self.assertIn("fileAttachments: fileReferences,", HOME)
         self.assertIn("same iSH command service", ATTACHMENT)

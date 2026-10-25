@@ -256,6 +256,37 @@ final class ConversationAttachmentSupportTests: XCTestCase {
         XCTAssertEqual(path, "/root/.alleycat/attachments/Game Assets.zip")
     }
 
+    func testLocalImportedZIPProvidesActionablePathInSubmittedTurn() {
+        let path = "/root/.alleycat/attachments/Demo.zip"
+        let attached = ConversationAttachment(kind: .archive, displayName: "Demo.zip", detail: "", fakefsPath: path)
+        guard let instruction = ConversationAttachmentSupport.localRuntimeFileAccessInput(attachments: [attached]),
+              case .text(let hint, _) = instruction else {
+            return XCTFail("Missing explicit on-device file access guidance")
+        }
+        XCTAssertTrue(hint.contains(path))
+        XCTAssertTrue(hint.contains("on-device iSH Linux filesystem"))
+        XCTAssertFalse(hint.contains("/private/var/mobile/Containers/"))
+        let inputs: [AppUserInput] = [instruction] +
+            ConversationAttachmentSupport.buildTurnInputs(attachments: [attached])
+        let request = AppComposerPayload(
+            text: "Inspect the ZIP",
+            additionalInputs: inputs,
+            fileAttachments: [],
+            approvalPolicy: nil, sandboxPolicy: nil, model: nil, effort: nil, serviceTier: nil
+        ).turnStartRequest(threadId: "local")
+        XCTAssertEqual(request.input.count, 3)
+        guard case .mention(_, let mentionedPath) = request.input[2] else {
+            return XCTFail("Missing exact ZIP mention path")
+        }
+        XCTAssertEqual(mentionedPath, path)
+    }
+
+    func testRuntimeAccessInstructionsExcludeImagesAndRemoteSearchFiles() {
+        let image = ConversationAttachment(kind: .image, displayName: "photo", detail: "")
+        let serverFile = ConversationAttachment(kind: .archive, displayName: "server.zip", detail: "", fakefsPath: "/home/runner/server.zip")
+        XCTAssertNil(ConversationAttachmentSupport.localRuntimeFileAccessInput(attachments: [image, serverFile]))
+    }
+
     func testImportedFolderAndArchiveKeepRuntimePaths() {
         let files = [
             ConversationAttachment(kind: .folder, displayName: "Project", detail: "", fakefsPath: "/root/.alleycat/attachments/Project"),
