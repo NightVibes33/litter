@@ -11,10 +11,18 @@ import os
 /// class reference (see `HomeComposerPresentationHost`). `inputText` sits above
 /// those modifiers, so previously every keystroke rebuilt the sheet,
 /// photosPicker, fileImporter, fullScreenCover and onChange chain.
+@MainActor
 @Observable
 final class HomeComposerAttachmentState {
     var attachedImages: [UIImage] = []
     var attachedFiles: [ComposerFileAttachment] = []
+    var importedFiles: [ConversationAttachment] = []
+    var pendingFileImports = 0
+    var importError: String?
+
+    var composerFileChips: [ComposerFileAttachment] {
+        attachedFiles + importedFiles.compactMap(ConversationAttachmentSupport.composerFileChip(for:))
+    }
     var showAttachMenu = false
     var showPhotoPicker = false
     var showCamera = false
@@ -22,12 +30,13 @@ final class HomeComposerAttachmentState {
     var selectedPhotos: [PhotosPickerItem] = []
 
     var hasAttachment: Bool {
-        !attachedImages.isEmpty || !attachedFiles.isEmpty
+        !attachedImages.isEmpty || !attachedFiles.isEmpty || !importedFiles.isEmpty || pendingFileImports > 0
     }
 
     func clearAttachments() {
         attachedImages = []
         attachedFiles = []
+        importedFiles = []
     }
 
     /// Appends up to `ComposerAttachmentLimits.maxImages`; extra images are
@@ -42,13 +51,27 @@ final class HomeComposerAttachmentState {
         attachedImages.remove(at: index)
     }
 
-    func apply(_ picked: PickedComposerFile) {
-        switch picked {
-        case .image(let image):
-            appendImage(image)
-        case .file(let file):
-            if !attachedFiles.contains(file) {
-                attachedFiles.append(file)
+    func removeFileChip(_ file: ComposerFileAttachment) {
+        attachedFiles.removeAll { $0 == file }
+        importedFiles.removeAll { $0.fakefsPath == file.path }
+    }
+
+    func importPickedURLs(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        pendingFileImports += 1
+        Task { @MainActor in
+            defer { pendingFileImports -= 1 }
+            for url in urls {
+                do {
+                    let imported = try await ConversationAttachmentSupport.importComposerURL(url)
+                    if let image = imported.image {
+                        appendImage(image)
+                    } else if !importedFiles.contains(where: { $0.fakefsPath == imported.fakefsPath }) {
+                        importedFiles.append(imported)
+                    }
+                } catch {
+                    importError = "Could not attach \(url.lastPathComponent): \(error.localizedDescription)"
+                }
             }
         }
     }
@@ -123,12 +146,10 @@ private struct HomeComposerPresentationHost: View {
             .fileImporter(
                 isPresented: $attach.showFileImporter,
                 allowedContentTypes: ConversationAttachmentSupport.supportedFileContentTypes,
-                allowsMultipleSelection: false
+                allowsMultipleSelection: true
             ) { result in
-                guard case let .success(urls) = result,
-                      let url = urls.first else { return }
-                guard let picked = ConversationAttachmentSupport.loadPickedFile(at: url) else { return }
-                attach.apply(picked)
+                guard case let .success(urls) = result, !urls.isEmpty else { return }
+                attach.importPickedURLs(urls)
             }
             .onChange(of: attach.selectedPhotos) { _, items in
                 guard !items.isEmpty else { return }
@@ -209,7 +230,7 @@ struct HomeComposerView: View {
     var body: some View {
         @Bindable var attach = attach
         VStack(spacing: 0) {
-            if let errorMessage {
+            if let errorMessage = errorMessage ?? attach.importError {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 11, weight: .semibold))
@@ -220,6 +241,7 @@ struct HomeComposerView: View {
                     Spacer(minLength: 0)
                     Button {
                         self.errorMessage = nil
+                        attach.importError = nil
                         isComposerFocused = false
                     } label: {
                         Image(systemName: "xmark.circle.fill")
@@ -233,7 +255,7 @@ struct HomeComposerView: View {
 
             ConversationComposerContentView(
                 attachedImages: attach.attachedImages,
-                attachedFiles: attach.attachedFiles,
+                attachedFiles: attach.composerFileChips,
                 collaborationMode: .default,
                 activePlanProgress: nil,
                 pendingUserInputRequest: nil,
@@ -253,7 +275,7 @@ struct HomeComposerView: View {
                 onClearAttachment: { attach.attachedImages = [] },
                 onRemoveImage: { index in attach.removeImage(at: index) },
                 onRemoveFileAttachment: { file in
-                    attach.attachedFiles.removeAll { $0 == file }
+                    attach.removeFileChip(file)
                 },
                 onRespondToPendingUserInput: { _ in },
                 onSteerQueuedFollowUp: { _ in },
@@ -289,10 +311,8 @@ struct HomeComposerView: View {
             onActiveChange?(active)
         }
         .dropDestination(for: URL.self) { urls, _ in
-            guard let picked = urls.lazy.compactMap({ ConversationAttachmentSupport.loadPickedFile(at: $0) }).first else {
-                return false
-            }
-            attach.apply(picked)
+            guard !urls.isEmpty else { return false }
+            attach.importPickedURLs(urls)
             return true
         }
         .dropDestination(for: Data.self) { items, _ in
@@ -331,10 +351,15 @@ struct HomeComposerView: View {
     }
 
     private func handleSend() {
+        guard attach.pendingFileImports == 0 else {
+            attach.importError = "File attachment import is still in progress."
+            return
+        }
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         let images = attach.attachedImages
         let files = attach.attachedFiles
-        guard !text.isEmpty || !images.isEmpty || !files.isEmpty else { return }
+        let importedFiles = attach.importedFiles
+        guard !text.isEmpty || !images.isEmpty || !files.isEmpty || !importedFiles.isEmpty else { return }
         guard !isSubmitting else { return }
         let selectedProject = project
         let fallbackServerId = transcriptionServerId
@@ -350,6 +375,14 @@ struct HomeComposerView: View {
             defer { isSubmitting = false }
             var createdThreadKey: ThreadKey?
             do {
+                for attachment in importedFiles {
+                    try await ConversationAttachmentSupport.validateComposerAttachment(attachment)
+                }
+                guard attach.pendingFileImports == 0 else {
+                    throw NSError(domain: "HomeComposer", code: 10, userInfo: [
+                        NSLocalizedDescriptionKey: "File attachment import is still in progress."
+                    ])
+                }
                 // No project picked: start in the computer's home folder
                 // instead of blocking the send (ChatGPT never blocks).
                 let project: AppProject
@@ -410,6 +443,7 @@ struct HomeComposerView: View {
                 for prepared in preparedAttachments {
                     additionalInputs.append(prepared.userInput)
                 }
+                additionalInputs.append(contentsOf: ConversationAttachmentSupport.buildTurnInputs(attachments: importedFiles))
                 let payload = AppComposerPayload(
                     text: text,
                     additionalInputs: additionalInputs,
