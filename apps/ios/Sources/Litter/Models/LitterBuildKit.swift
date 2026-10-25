@@ -1767,7 +1767,7 @@ actor LitterBuildKit {
         let objcxxPath = "\(root)/hello.mm"
         let projectDir = "\(root)/HelloUIKit"
         let projectSources = "\(projectDir)/Sources"
-        let projectManifest = "\(projectDir)/LitterBuild.json"
+        let projectManifest = "\(projectDir)/AlleyCatBuild.json"
         var artifacts: [NativeDriverArtifact] = []
         var log = """
         Alley Cãt full iOS toolchain self-test
@@ -2243,12 +2243,12 @@ actor LitterBuildKit {
         }
         let hostRoot = Self.hostJobRoot(buildDir: buildDir)
         guard let first = Self.shellWords(args).first else {
-            return BuildKitHostStaging(log: "BuildKit project preflight: missing LitterBuild.json path.\n", hostWorkDir: hostRoot.path, hostProjectPath: nil, hostInputPath: nil, fakefsProjectPath: nil)
+            return BuildKitHostStaging(log: "BuildKit project preflight: missing AlleyCatBuild.json path.\n", hostWorkDir: hostRoot.path, hostProjectPath: nil, hostInputPath: nil, fakefsProjectPath: nil)
         }
         let projectPath = first.hasPrefix("/") ? first : "\(cwd)/\(first)"
         var log = "BuildKit project preflight\nProject: \(projectPath)\n"
         guard let manifestText = try? await IshFS.readTextFile(path: projectPath, maxBytes: 256_000), let data = manifestText.data(using: .utf8), let manifest = try? JSONDecoder().decode(LitterBuildProjectManifest.self, from: data) else {
-            log += "- Could not read or decode LitterBuild.json. Native driver will receive the original request only.\n"
+            log += "- Could not read or decode AlleyCatBuild.json (or legacy LitterBuild.json). Native driver will receive the original request only.\n"
             return BuildKitHostStaging(log: log, hostWorkDir: hostRoot.path, hostProjectPath: nil, hostInputPath: nil, fakefsProjectPath: projectPath)
         }
 
@@ -3541,14 +3541,14 @@ actor LitterBuildKit {
            let inferred = inferredManifestPath(fromXcodeContainer: projectPath) {
             return inferred
         }
-        return "LitterBuild.json"
+        return IshFS.publicBuildManifestName
     }
 
     private static func inferredManifestPath(fromXcodeContainer path: String) -> String? {
         guard path.hasSuffix(".xcodeproj") || path.hasSuffix(".xcworkspace") else { return nil }
         let parent = (path as NSString).deletingLastPathComponent
-        if parent.isEmpty || parent == "." { return "LitterBuild.json" }
-        return (parent as NSString).appendingPathComponent("LitterBuild.json")
+        if parent.isEmpty || parent == "." { return IshFS.publicBuildManifestName }
+        return (parent as NSString).appendingPathComponent(IshFS.publicBuildManifestName)
     }
 
     private static func xcrunToolInvocation(tokens: [String]) -> (tool: String, args: [String])? {
@@ -3644,7 +3644,7 @@ actor LitterBuildKit {
         swift --version queries the installed native Nyxian Swift frontend.
         swiftc compiles with that frontend for the iOS target.
         SwiftPM (build/test/package) and interpreter/run commands are not exposed here.
-        Use the explicit litter-swift-build/litter-ipa-build APIs for LitterBuild.json projects.
+        Use the explicit litter-swift-build/litter-ipa-build APIs for AlleyCatBuild.json projects.
         """
     }
 
@@ -3717,13 +3717,13 @@ actor LitterBuildKit {
           xcodebuild -showsdks
           xcodebuild -list
           xcodebuild -showBuildSettings
-          xcodebuild [build] [LitterBuild.json]
+          xcodebuild [build] [AlleyCatBuild.json]
           xcodebuild -project App.xcodeproj build
-          xcodebuild test [LitterBuild.json]
-          xcodebuild archive [LitterBuild.json]
+          xcodebuild test [AlleyCatBuild.json]
+          xcodebuild archive [AlleyCatBuild.json]
           xcodebuild clean
 
-        This is an iOS-device BuildKit bridge. It supports common Xcode-style discovery and routes builds through LitterBuild.json; simulator, Interface Builder, SwiftPM package resolution, and desktop signing workflows are intentionally unavailable on device.
+        This is an iOS-device BuildKit bridge. It supports common Xcode-style discovery and routes builds through AlleyCatBuild.json; simulator, Interface Builder, SwiftPM package resolution, and desktop signing workflows are intentionally unavailable on device.
         """
     }
 
@@ -3995,8 +3995,8 @@ actor LitterBuildKit {
         output += "\nBot path examples:\n"
         output += "- alleycat-swift-selftest\n"
         output += "- alleycat-swift-check /root/projects/App/Sources/App.swift\n"
-        output += "- alleycat-swift-build /root/projects/App/LitterBuild.json\n"
-        output += "- alleycat-ipa-build /root/projects/App/LitterBuild.json\n"
+        output += "- alleycat-swift-build /root/projects/App/AlleyCatBuild.json\n"
+        output += "- alleycat-ipa-build /root/projects/App/AlleyCatBuild.json\n"
         return output
     }
 
