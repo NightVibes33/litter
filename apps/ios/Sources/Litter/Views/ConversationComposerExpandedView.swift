@@ -71,7 +71,12 @@ struct ConversationComposerExpandedView: View {
             .task {
                 // Small delay lets the cover finish its transition and the
                 // UITextView attach to a window, so becomeFirstResponder sticks.
-                try? await Task.sleep(nanoseconds: 150_000_000)
+                do {
+                    try await Task.sleep(nanoseconds: 150_000_000)
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled, isPresented else { return }
                 isFocused = true
             }
         }

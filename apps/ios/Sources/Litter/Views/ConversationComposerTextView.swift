@@ -173,6 +173,14 @@ struct ConversationComposerTextView: UIViewRepresentable {
         context.coordinator.syncFocus(for: uiView)
     }
 
+    static func dismantleUIView(_ uiView: PasteAwareComposerUITextView, coordinator: Coordinator) {
+        coordinator.stopDeferredUpdates()
+        uiView.delegate = nil
+        uiView.onPasteImage = nil
+        uiView.onHardwareSubmit = nil
+        uiView.resignFirstResponder()
+    }
+
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: PasteAwareComposerUITextView, context: Context) -> CGSize? {
         if unboundedHeight { return nil }
         let width = proposal.width ?? uiView.bounds.width
@@ -201,6 +209,7 @@ struct ConversationComposerTextView: UIViewRepresentable {
         var parent: ConversationComposerTextView
         var isSynchronizingText = false
         var textReconciler: ComposerTextReconciler
+        private var isActive = true
         private var requestedFocusState: Bool?
         private var focusSyncWorkItem: DispatchWorkItem?
         /// `LitterFont.uiFont` reads `UserDefaults` and probes `UIFont(name:)`
@@ -219,6 +228,14 @@ struct ConversationComposerTextView: UIViewRepresentable {
         init(_ parent: ConversationComposerTextView) {
             self.parent = parent
             textReconciler = ComposerTextReconciler(initialText: parent.text)
+        }
+
+        func stopDeferredUpdates() {
+            isActive = false
+            focusSyncWorkItem?.cancel()
+            focusSyncWorkItem = nil
+            mentionHighlightWorkItem?.cancel()
+            mentionHighlightWorkItem = nil
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) {
@@ -279,7 +296,7 @@ struct ConversationComposerTextView: UIViewRepresentable {
 
             focusSyncWorkItem?.cancel()
             let work = DispatchWorkItem { [weak textView, weak self] in
-                guard let self, let textView else { return }
+                guard let self, self.isActive, let textView else { return }
                 self.focusSyncWorkItem = nil
                 let latestRequestedFocus = self.requestedFocusState ?? false
                 if latestRequestedFocus {
@@ -313,7 +330,7 @@ struct ConversationComposerTextView: UIViewRepresentable {
         func scheduleMentionHighlight(for textView: UITextView) {
             mentionHighlightWorkItem?.cancel()
             let work = DispatchWorkItem { [weak self, weak textView] in
-                guard let self, let textView else { return }
+                guard let self, self.isActive, let textView else { return }
                 self.applyMentionHighlight(to: textView)
             }
             mentionHighlightWorkItem = work
@@ -429,7 +446,7 @@ struct ConversationComposerTextView: UIViewRepresentable {
         private func updateFocusBinding(_ isFocused: Bool) {
             guard parent.isFocused != isFocused else { return }
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.parent.isFocused != isFocused else { return }
+                guard let self, self.isActive, self.parent.isFocused != isFocused else { return }
                 self.parent.isFocused = isFocused
             }
         }

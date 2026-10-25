@@ -276,9 +276,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
     private func notificationPayloadJson(_ userInfo: [AnyHashable: Any]) -> String? {
         guard !userInfo.isEmpty else { return nil }
-        let payload = Dictionary(uniqueKeysWithValues: userInfo.map { key, value in
+        // Different notification key types can have the same description.
+        // Resolve collisions instead of trapping in uniqueKeysWithValues.
+        let payload = Dictionary(userInfo.map { key, value in
             (String(describing: key), String(describing: value))
-        })
+        }, uniquingKeysWith: { _, latest in latest })
         guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
               let json = String(data: data, encoding: .utf8)
         else {
@@ -1087,7 +1089,7 @@ private struct HomeNavigationView: View {
         .sheet(isPresented: $showProjectPicker) {
             ProjectPickerSheet(
                 projects: homeDashboardModel.projects,
-                serverNamesById: Dictionary(uniqueKeysWithValues: homeDashboardModel.connectedServers.map { ($0.id, $0.displayName) }),
+                serverNamesById: Dictionary(homeDashboardModel.connectedServers.map { ($0.id, $0.displayName) }, uniquingKeysWith: { _, latest in latest }),
                 localServerIds: Set(homeDashboardModel.connectedServers.filter(\.isLocal).map(\.id)),
                 onSelect: { project in
                     homeDashboardModel.selectedServerId = project.serverId
