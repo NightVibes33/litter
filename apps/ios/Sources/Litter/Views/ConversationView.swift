@@ -227,11 +227,8 @@ struct ConversationView: View {
                     activeThreadKey.threadId,
                     text.count
                 )
-                let sshSessionId = await SshSessionStore.shared.sessionId(for: activeThreadKey.serverId)
                 for attachment in importedFiles {
-                    try await ConversationAttachmentSupport.validateComposerAttachment(
-                        attachment, ssh: appModel.ssh, sshSessionId: sshSessionId
-                    )
+                    try await ConversationAttachmentSupport.validateComposerAttachment(attachment)
                 }
                 let preparedAttachments = await ConversationAttachmentSupport.prepareImages(attachmentImages)
                 let payload = try makeComposerPayload(
@@ -1666,7 +1663,7 @@ private struct ConversationInputBar: View {
 
     private func removeFileAttachment(_ file: ComposerFileAttachment) {
         attachedFiles.removeAll { $0 == file }
-        importedFiles.removeAll { ($0.remotePath ?? $0.fakefsPath) == file.path }
+        importedFiles.removeAll { $0.fakefsPath == file.path }
     }
 
     private func importPickedURLs(_ urls: [URL]) {
@@ -1684,17 +1681,7 @@ private struct ConversationInputBar: View {
             for url in urls {
                 guard generation == fileImportGeneration else { return }
                 do {
-                    let imported: ConversationAttachment
-                    if !allowFileImport,
-                       let sessionId = await SshSessionStore.shared.sessionId(for: snapshot.threadKey.serverId) {
-                        imported = try await ConversationAttachmentSupport.importComposerSSHURL(
-                            url, ssh: appModel.ssh, sessionId: sessionId
-                        )
-                    } else {
-                        imported = try await ConversationAttachmentSupport.importComposerURL(
-                            url, allowFileImport: allowFileImport
-                        )
-                    }
+                    let imported = try await ConversationAttachmentSupport.importComposerURL(url, allowFileImport: allowFileImport)
                     guard generation == fileImportGeneration else { return }
                     if let image = imported.image {
                         appendAttachedImage(image)
@@ -1766,8 +1753,8 @@ private struct ConversationInputBar: View {
             slashErrorMessage = issue
             return
         }
-        guard imported.allSatisfy({ $0.remotePath != nil || appModel.isLocalServer(serverId: snapshot.threadKey.serverId) }) else {
-            slashErrorMessage = "This file is only available in iSH and cannot be read by the selected remote agent."
+        guard imported.isEmpty || appModel.isLocalServer(serverId: snapshot.threadKey.serverId) else {
+            slashErrorMessage = "Imported iSH files cannot be sent to a remote computer. Choose an on-device conversation."
             return
         }
 
@@ -1776,11 +1763,8 @@ private struct ConversationInputBar: View {
             defer { preparingFileSend = false }
             do {
                 // Failed or missing imports cannot clear the draft or start a turn.
-                let sshSessionId = await SshSessionStore.shared.sessionId(for: snapshot.threadKey.serverId)
                 for attachment in imported {
-                    try await ConversationAttachmentSupport.validateComposerAttachment(
-                        attachment, ssh: appModel.ssh, sshSessionId: sshSessionId
-                    )
+                    try await ConversationAttachmentSupport.validateComposerAttachment(attachment)
                 }
                 guard pendingFileImports == 0 else {
                     slashErrorMessage = "File attachment import is still in progress."

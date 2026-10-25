@@ -34,7 +34,7 @@ class FakefsComposerContractTests(unittest.TestCase):
         self.assertIn("same iSH command service", ATTACHMENT)
         self.assertIn("IshFS.fileSize(path: path)", ATTACHMENT)
         self.assertIn("validateComposerAttachment(attachment)", HOME)
-        self.assertRegex(CONVERSATION, r"validateComposerAttachment\(\s*attachment, ssh:")
+        self.assertIn("validateComposerAttachment(attachment)", CONVERSATION)
         self.assertIn("validateComposerAttachment(imported)", ATTACHMENT)
         self.assertIn("let result = await IshFS.run(probe)", ATTACHMENT)
         self.assertIn('composerImportDirectory = IshFS.composerAttachmentsRoot', ATTACHMENT)

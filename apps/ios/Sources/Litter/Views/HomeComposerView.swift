@@ -54,10 +54,10 @@ final class HomeComposerAttachmentState {
 
     func removeFileChip(_ file: ComposerFileAttachment) {
         attachedFiles.removeAll { $0 == file }
-        importedFiles.removeAll { ($0.remotePath ?? $0.fakefsPath) == file.path }
+        importedFiles.removeAll { $0.fakefsPath == file.path }
     }
 
-    func importPickedURLs(_ urls: [URL], allowFileImport: Bool, remoteServerId: String?, ssh: SshBridge) {
+    func importPickedURLs(_ urls: [URL], allowFileImport: Bool) {
         guard !urls.isEmpty else { return }
         guard !isPreparingSend else {
             importError = "Finish sending this turn before attaching another file."
@@ -69,17 +69,7 @@ final class HomeComposerAttachmentState {
             defer { pendingFileImports -= 1 }
             for url in urls {
                 do {
-                    let imported: ConversationAttachment
-                    if !allowFileImport, let remoteServerId,
-                       let sessionId = await SshSessionStore.shared.sessionId(for: remoteServerId) {
-                        imported = try await ConversationAttachmentSupport.importComposerSSHURL(
-                            url, ssh: ssh, sessionId: sessionId
-                        )
-                    } else {
-                        imported = try await ConversationAttachmentSupport.importComposerURL(
-                            url, allowFileImport: allowFileImport
-                        )
-                    }
+                    let imported = try await ConversationAttachmentSupport.importComposerURL(url, allowFileImport: allowFileImport)
                     if let image = imported.image {
                         appendImage(image)
                     } else if !importedFiles.contains(where: { $0.fakefsPath == imported.fakefsPath }) {
@@ -126,8 +116,6 @@ final class HomeComposerAttachmentState {
 private struct HomeComposerPresentationHost: View {
     @Bindable var attach: HomeComposerAttachmentState
     let allowFileImport: Bool
-    let remoteServerId: String?
-    let ssh: SshBridge
 
     private var attachSheetDetentHeight: CGFloat {
         let showsCamera = !LitterPlatform.isCatalyst
@@ -169,9 +157,7 @@ private struct HomeComposerPresentationHost: View {
             ) { result in
                 switch result {
                 case .success(let urls):
-                    if !urls.isEmpty {
-                        attach.importPickedURLs(urls, allowFileImport: allowFileImport, remoteServerId: remoteServerId, ssh: ssh)
-                    }
+                    if !urls.isEmpty { attach.importPickedURLs(urls, allowFileImport: allowFileImport) }
                 case .failure(let error):
                     attach.importError = "Could not select a file: \(error.localizedDescription)"
                 }
@@ -354,10 +340,7 @@ struct HomeComposerView: View {
         }
         .dropDestination(for: URL.self) { urls, _ in
             guard !urls.isEmpty else { return false }
-            attach.importPickedURLs(
-                urls, allowFileImport: allowsLocalFileImports,
-                remoteServerId: resolvedTranscriptionServerId, ssh: appModel.ssh
-            )
+            attach.importPickedURLs(urls, allowFileImport: allowsLocalFileImports)
             return true
         }
         .dropDestination(for: Data.self) { items, _ in
@@ -371,10 +354,7 @@ struct HomeComposerView: View {
         // All attachment presentation lives behind a stable object reference so
         // the sheet/picker/importer/cover chain is not rebuilt per keystroke.
         .background {
-            HomeComposerPresentationHost(
-                attach: attach, allowFileImport: allowsLocalFileImports,
-                remoteServerId: resolvedTranscriptionServerId, ssh: appModel.ssh
-            )
+            HomeComposerPresentationHost(attach: attach, allowFileImport: allowsLocalFileImports)
         }
         .environment(
             \.composerPermissionContext,
@@ -413,8 +393,9 @@ struct HomeComposerView: View {
             errorMessage = issue
             return
         }
-        if !allowsLocalFileImports && importedFiles.contains(where: { $0.remotePath == nil && $0.image == nil }) {
-            errorMessage = "The selected file is only in iSH, not the remote agent's workspace."
+        if !importedFiles.isEmpty, let targetServerId = resolvedTranscriptionServerId,
+           !appModel.isLocalServer(serverId: targetServerId) {
+            errorMessage = "Imported iSH files cannot be sent to a remote computer. Choose an on-device project."
             return
         }
         let selectedProject = project
@@ -435,17 +416,8 @@ struct HomeComposerView: View {
             }
             var createdThreadKey: ThreadKey?
             do {
-                let targetServerId = selectedProject?.serverId ?? fallbackServerId
-                let sshSessionId: String?
-                if let targetServerId {
-                    sshSessionId = await SshSessionStore.shared.sessionId(for: targetServerId)
-                } else {
-                    sshSessionId = nil
-                }
                 for attachment in importedFiles {
-                    try await ConversationAttachmentSupport.validateComposerAttachment(
-                        attachment, ssh: appModel.ssh, sshSessionId: sshSessionId
-                    )
+                    try await ConversationAttachmentSupport.validateComposerAttachment(attachment)
                 }
                 guard attach.pendingFileImports == 0 else {
                     throw NSError(domain: "HomeComposer", code: 10, userInfo: [
