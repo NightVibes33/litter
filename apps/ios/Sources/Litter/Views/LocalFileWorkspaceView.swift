@@ -599,7 +599,7 @@ struct LocalFileWorkspaceView: View {
         if AppDistributionCapabilities.shouldRunSideloadBuildKitMonitor && entry.isSwiftSource {
             Button("Swift Check", systemImage: "checkmark.seal") { taskBag.run { await runSwiftCheck(entry) } }
         }
-        if AppDistributionCapabilities.shouldRunSideloadBuildKitMonitor && entry.name == "LitterBuild.json" && entry.kind == .file {
+        if AppDistributionCapabilities.shouldRunSideloadBuildKitMonitor && IshFS.isSupportedBuildManifest(entry.name) && entry.kind == .file {
             Button("Swift Build", systemImage: "hammer") { taskBag.run { await runSwiftBuild(projectPath: entry.path) } }
             Button("Build IPA", systemImage: "shippingbox") { taskBag.run { await runIPABuild(projectPath: entry.path) } }
         }
@@ -857,7 +857,7 @@ struct LocalFileWorkspaceView: View {
     }
 
     private func createLitterBuildManifest() async {
-        let target = RemotePath.parse(path: model.currentPath).join(name: "LitterBuild.json").asString()
+        let target = RemotePath.parse(path: model.currentPath).join(name: IshFS.publicBuildManifestName).asString()
         guard !(await IshFS.exists(path: target)) else {
             alertMessage = "Build manifest already exists here."
             return
@@ -1028,7 +1028,7 @@ private enum LocalFileFilter: String, CaseIterable, Identifiable {
         case .code: return entry.isCode
         case .images: return entry.isImage
         case .archives: return entry.isArchive
-        case .builds: return entry.isBuildArtifact || entry.name == "LitterBuild.json"
+        case .builds: return entry.isBuildArtifact || IshFS.isSupportedBuildManifest(entry.name)
         case .recent: return entry.isRecentlyModified
         case .large: return entry.isLarge
         }
@@ -1234,7 +1234,7 @@ private final class LocalFileWorkspaceModel {
         for entry in source {
             if entry.kind == .directory { folders += 1 }
             if entry.isCode { code += 1 }
-            if entry.isBuildArtifact || entry.name == "LitterBuild.json" { builds += 1 }
+            if entry.isBuildArtifact || IshFS.isSupportedBuildManifest(entry.name) { builds += 1 }
             if entry.isImage { images += 1 }
             totalBytes += max(entry.size, 0)
         }
@@ -1255,7 +1255,8 @@ private final class LocalFileWorkspaceModel {
     }
 
     var litterBuildManifestPath: String? {
-        entries.first { $0.name == "LitterBuild.json" && $0.kind != .directory }?.path
+        entries.first { $0.name == IshFS.publicBuildManifestName && $0.kind == .file }?.path
+            ?? entries.first { $0.name == IshFS.legacyBuildManifestName && $0.kind == .file }?.path
     }
 
     var hasLitterBuildManifest: Bool {
@@ -1353,10 +1354,11 @@ private final class LocalFileWorkspaceModel {
             if revision == reloadRevision { isLoading = false }
         }
         do {
-            let loadedEntries = try await IshFS.listDirectory(path: path, includeHidden: showHidden)
+            let canonical = IshFS.canonicalAlleyCatPath(path)
+            let loadedEntries = try await IshFS.listDirectory(path: canonical, includeHidden: showHidden)
             guard revision == reloadRevision, !Task.isCancelled else { return }
             entries = loadedEntries
-            currentPath = path
+            currentPath = canonical
             selectedPaths = selectedPaths.intersection(Set(entries.map(\.path)))
         } catch {
             guard revision == reloadRevision, !Task.isCancelled else { return }

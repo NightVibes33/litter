@@ -16,6 +16,12 @@ enum IshFS {
     static let buildKitRoot = "/root/.alleycat/buildkit"
     static let buildsRoot = "/root/.alleycat/builds"
     static let composerAttachmentsRoot = "/root/.alleycat/attachments"
+    static let publicBuildManifestName = "AlleyCatBuild.json"
+    static let legacyBuildManifestName = "LitterBuild.json"
+
+    static func isSupportedBuildManifest(_ name: String) -> Bool {
+        name == publicBuildManifestName || name == legacyBuildManifestName
+    }
 
     /// Canonicalize only Alley Cat-owned legacy fakefs paths. Keep references
     /// in past chat messages valid through compatibility symlinks.

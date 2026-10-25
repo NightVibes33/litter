@@ -23,7 +23,9 @@ class LocalFilesContractTests(unittest.TestCase):
     def test_branding_is_alley_cat_and_legacy_manifest_is_preserved(self):
         self.assertIn('hostTitle: String = "alleycat.local"', VIEW)
         self.assertNotIn('hostTitle: String = "litter.local"', VIEW)
-        self.assertIn('entry.name == "LitterBuild.json"', VIEW)
+        self.assertIn("IshFS.isSupportedBuildManifest(entry.name)", VIEW)
+        self.assertIn("join(name: IshFS.publicBuildManifestName)", VIEW)
+        self.assertIn("IshFS.legacyBuildManifestName", VIEW)
         self.assertIn("JSONSerialization.data(withJSONObject:", VIEW)
 
     def test_file_actions_handle_symlinks_and_import_batching(self):
