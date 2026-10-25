@@ -220,7 +220,7 @@ enum ConversationAttachmentSupport {
 
         regexMatches(in: text, pattern: #"\[[^\]\n]{0,180}\]\(([^)\n]+)\)"#, captureGroup: 1)
             .forEach(appendCandidate)
-        regexMatches(in: text, pattern: #"(?:litter-file|ish-file|file)://[^\s<>)\]]+"#, captureGroup: 0)
+        regexMatches(in: text, pattern: #"(?:alleycat-file|litter-file|ish-file|file)://[^\s<>)\]]+"#, captureGroup: 0)
             .forEach(appendCandidate)
         regexMatches(in: text, pattern: #"(^|[\s(])((?:~/[^\s<>)\]]+)|/(?:root|mnt|tmp|etc|usr/local/bin)(?:/[^\s<>)\]]*)?)"#, captureGroup: 2)
             .forEach(appendCandidate)
@@ -237,7 +237,7 @@ enum ConversationAttachmentSupport {
 
         if let url = URL(string: value), let scheme = url.scheme?.lowercased() {
             switch scheme {
-            case "litter-file", "ish-file":
+            case "alleycat-file", "litter-file", "ish-file":
                 value = pathForCustomFileScheme(url)
             case "file":
                 value = url.path
@@ -514,7 +514,10 @@ enum ConversationAttachmentSupport {
             || lower.hasSuffix(".tgz")
             || lower.hasSuffix(".tar.xz")
             || lower.hasSuffix(".txz")
+            || lower.hasSuffix(".tar.bz2")
+            || lower.hasSuffix(".tbz2")
             || lower.hasSuffix(".gz")
+            || lower.hasSuffix(".bz2")
             || lower.hasSuffix(".xz")
     }
 

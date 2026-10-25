@@ -416,13 +416,22 @@ enum IshFS {
         case \(archive) in
           *.zip) command -v unzip >/dev/null 2>&1 && exec unzip -n \(archive) -d \(output) ;;
           *.rar) command -v unar >/dev/null 2>&1 && exec unar -o \(output) \(archive); command -v unrar >/dev/null 2>&1 && exec unrar x -o- \(archive) \(output)/ ;;
-          *.tar|*.tar.gz|*.tgz|*.tar.xz|*.txz) exec tar -xf \(archive) -C \(output) ;;
+          *.tar|*.tar.gz|*.tgz|*.tar.xz|*.txz|*.tar.bz2|*.tbz2) exec tar -xf \(archive) -C \(output) ;;
           *.gz)
             src=\(archive)
             base=${src##*/}
             dest=\(output)/${base%.gz}
             [ ! -e "$dest" ] && [ ! -L "$dest" ] || exit 17
             if gzip -dc "$src" > "$dest"; then exit 0; fi
+            rm -f "$dest"
+            exit 2
+            ;;
+          *.xz|*.bz2)
+            src=\(archive)
+            base=${src##*/}
+            case "$src" in *.xz) dest=\(output)/${base%.xz}; extractor=xz ;; *.bz2) dest=\(output)/${base%.bz2}; extractor=bzip2 ;; esac
+            command -v "$extractor" >/dev/null 2>&1 || { echo "Missing $extractor in fakefs"; exit 127; }
+            if "$extractor" -dc "$src" > "$dest"; then exit 0; fi
             rm -f "$dest"
             exit 2
             ;;

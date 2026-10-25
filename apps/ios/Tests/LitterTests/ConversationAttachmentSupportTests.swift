@@ -33,6 +33,8 @@ final class ConversationAttachmentSupportTests: XCTestCase {
     func testNormalizeLinkedFakefsPathSupportsTildeAndCustomHostForm() {
         XCTAssertEqual(ConversationAttachmentSupport.normalizeLinkedFakefsPath("~/hello.swift"), "/root/hello.swift")
         XCTAssertEqual(ConversationAttachmentSupport.normalizeLinkedFakefsPath("litter-file://root/tmp/test.png"), "/root/tmp/test.png")
+        XCTAssertEqual(ConversationAttachmentSupport.normalizeLinkedFakefsPath("alleycat-file://root/tmp/test.png"), "/root/tmp/test.png")
+        XCTAssertEqual(ConversationAttachmentSupport.linkedFakefsPaths(in: "[App](alleycat-file:///root/alley-cat/My%20App.ipa)"), ["/root/alley-cat/My App.ipa"])
     }
 
     func testOversizedPasteDetectionUsesCharacterAndByteLimits() {

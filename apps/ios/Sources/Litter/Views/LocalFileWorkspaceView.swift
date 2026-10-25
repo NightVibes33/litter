@@ -664,7 +664,7 @@ struct LocalFileWorkspaceView: View {
         var allowed = CharacterSet.urlPathAllowed
         allowed.remove(charactersIn: "#%[]()")
         let encodedPath = path.addingPercentEncoding(withAllowedCharacters: allowed) ?? path
-        return "litter-file://\(encodedPath)"
+        return "alleycat-file://\(encodedPath)"
     }
 
     private func copyBotMention(_ entry: LocalFileEntry) {
@@ -2235,7 +2235,7 @@ private enum LocalFileDeferredAction {
 private enum LocalFileArchiveNaming {
     static func extractedFolderName(_ filename: String) -> String {
         let lower = filename.lowercased()
-        let extensions = [".tar.gz", ".tar.xz", ".tar.bz2", ".tgz", ".txz", ".tbz2", ".zip", ".rar", ".tar", ".gz"]
+        let extensions = [".tar.gz", ".tar.xz", ".tar.bz2", ".tgz", ".txz", ".tbz2", ".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz"]
         let suffix = extensions.first { lower.hasSuffix($0) } ?? ""
         let stem = suffix.isEmpty ? filename : String(filename.dropLast(suffix.count))
         return "\(stem.isEmpty ? filename : stem) extracted"
