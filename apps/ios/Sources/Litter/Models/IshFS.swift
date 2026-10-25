@@ -113,7 +113,7 @@ enum IshFS {
     /// path is made an alias to the canonical Alley Cat directory.
     private static let alleyCatFilesystemMigrationScript = """
     set -eu
-    backup="/root/.alleycat-migration-backup-$(date +%Y%m%d%H%M%S)-$"
+    backup=
     merge_contents() {
       # BusyBox ash supports local variables. These must be scoped because
       # nested directory merges recurse and would otherwise overwrite the
@@ -129,6 +129,9 @@ enum IshFS {
           merge_contents "$entry" "$target" "$relative/$name"
           rmdir "$entry"
         else
+          if [ -z "$backup" ]; then
+            backup=$(mktemp -d /root/.alleycat-migration-backup-XXXXXXXX)
+          fi
           mkdir -p "$backup/$relative"
           mv "$entry" "$backup/$relative/$name"
           printf 'Preserved legacy conflict at %s\\n' "$backup/$relative/$name"
@@ -171,7 +174,7 @@ enum IshFS {
     if [ -f /root/.litter-fakefs-version ] && [ ! -e /root/.alleycat-fakefs-version ]; then
       mv /root/.litter-fakefs-version /root/.alleycat-fakefs-version
     fi
-    if [ ! -e /root/.litter-fakefs-version ] && [ ! -L /root/.litter-fakefs-version ]; then
+    if [ -f /root/.alleycat-fakefs-version ] && [ ! -e /root/.litter-fakefs-version ] && [ ! -L /root/.litter-fakefs-version ]; then
       ln -s /root/.alleycat-fakefs-version /root/.litter-fakefs-version
     fi
     echo 'Alley Cat filesystem layout ready'
