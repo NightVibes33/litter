@@ -26,7 +26,10 @@ def migration_script(fake_root: Path) -> str:
         str(fake_root),
         script,
     )
-    if "/root/" in script or " /root " in script:
+    # The private fixture itself ends in /root, so a plain substring test
+    # incorrectly flags its own safe paths. Match only *unrebased* absolute
+    # roots, using the same token boundary as the path rewriting expression.
+    if re.search(r'(?<![\w/])/root(?=/|\s|$)', script):
         raise AssertionError("Unrebased /root path; refusing to execute")
     return script
 
