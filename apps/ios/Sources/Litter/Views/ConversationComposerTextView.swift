@@ -178,14 +178,13 @@ struct ConversationComposerTextView: UIViewRepresentable {
         let width = proposal.width ?? uiView.bounds.width
         guard width > 0 else { return nil }
 
-        // Keep the focused composer height stable. Measuring the full text view
-        // on every keystroke propagates through the safe-area composer and
-        // re-places the conversation LazyVStack, which can trip the iOS 27
-        // scene-update watchdog on long or live transcripts. TextKit scrolls
-        // internally while editing; the expand affordance remains available.
+        // A focused text view must not feed its newly laid-out bounds back
+        // into SwiftUI's size proposal. That feedback can repeatedly resize
+        // the safe-area inset and force LazyVStack placement on every edit.
+        // Freeze a clamped height for this focus session; UITextView scrolls
+        // the insertion caret internally and the explicit expand UI remains.
         if uiView.isFirstResponder {
-            let minimum = context.coordinator.minimumHeight(for: uiView)
-            return CGSize(width: width, height: max(uiView.bounds.height, minimum))
+            return CGSize(width: width, height: context.coordinator.focusedHeight(for: uiView))
         }
 
         let fittingSize = uiView.sizeThatFits(
@@ -213,6 +212,9 @@ struct ConversationComposerTextView: UIViewRepresentable {
         private var cachedFont: UIFont?
         private var cachedFontPointSize: CGFloat = 0
         private var cachedFontRevision: Int = -1
+        // Set once on focus and released on blur. Avoid using the view's
+        // changing bounds as its preferred SwiftUI height during typing.
+        private var frozenFocusedHeight: CGFloat?
 
         init(_ parent: ConversationComposerTextView) {
             self.parent = parent
@@ -220,11 +222,27 @@ struct ConversationComposerTextView: UIViewRepresentable {
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) {
+            frozenFocusedHeight = clampedFocusedHeight(for: textView)
             updateFocusBinding(true)
         }
 
         func textViewDidEndEditing(_ textView: UITextView) {
+            frozenFocusedHeight = nil
             updateFocusBinding(false)
+        }
+
+        func focusedHeight(for textView: UITextView) -> CGFloat {
+            if let frozenFocusedHeight { return frozenFocusedHeight }
+            let height = clampedFocusedHeight(for: textView)
+            frozenFocusedHeight = height
+            return height
+        }
+
+        private func clampedFocusedHeight(for textView: UITextView) -> CGFloat {
+            min(
+                max(textView.bounds.height, minimumHeight(for: textView)),
+                maximumHeight(for: textView)
+            )
         }
 
         func textViewDidChange(_ textView: UITextView) {
