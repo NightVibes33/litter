@@ -384,6 +384,9 @@ struct ConversationView: View {
         for prepared in preparedAttachments {
             additionalInputs.append(prepared.userInput)
         }
+        if let localAccess = ConversationAttachmentSupport.localRuntimeFileAccessInput(attachments: importedFiles) {
+            additionalInputs.append(localAccess)
+        }
         additionalInputs.append(contentsOf: ConversationAttachmentSupport.buildTurnInputs(attachments: importedFiles))
         // Codex agents also need the real path in the visible request text.
         // Only verified iSH imports are put here; never File Provider URLs.

@@ -141,6 +141,28 @@ enum ConversationAttachmentSupport {
         }
     }
 
+    /// Structured mention inputs alone may not surface an actionable path to
+    /// the model. Tell the *local* agent exactly where iSH stored real bytes.
+    /// Server-side file search results are intentionally not included here.
+    static func localRuntimeFileAccessInput(attachments: [ConversationAttachment]) -> AppUserInput? {
+        let paths = attachments.compactMap { attachment -> String? in
+            guard attachment.image == nil, let path = attachment.fakefsPath,
+                  path.hasPrefix(composerImportDirectory + "/") ||
+                  path.hasPrefix("/root/.litter/attachments/") else { return nil }
+            return path
+        }
+        guard !paths.isEmpty else { return nil }
+        let lines = paths.map { "- \($0)" }.joined(separator: "\n")
+        return .text(
+            text: """
+            These attached files have already been copied into this app's on-device iSH Linux filesystem. These are real files available to your local shell tools, not iPhone File Provider URLs:
+            \(lines)
+            Inspect those exact paths using the local shell before reporting they cannot be accessed. For ZIP archives, use unzip -l or unzip -t when those commands are installed. Do not attempt to open an iOS /private/var/mobile path.
+            """,
+            textElements: []
+        )
+    }
+
     static func attachment(from searchResult: FileSearchResult) -> ConversationAttachment? {
         let isDirectory: Bool
         switch searchResult.matchType {

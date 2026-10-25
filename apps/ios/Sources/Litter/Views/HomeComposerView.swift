@@ -484,6 +484,9 @@ struct HomeComposerView: View {
                 for prepared in preparedAttachments {
                     additionalInputs.append(prepared.userInput)
                 }
+                if let localAccess = ConversationAttachmentSupport.localRuntimeFileAccessInput(attachments: importedFiles) {
+                    additionalInputs.append(localAccess)
+                }
                 additionalInputs.append(contentsOf: ConversationAttachmentSupport.buildTurnInputs(attachments: importedFiles))
                 let fileReferences = files + importedFiles.compactMap(
                     ConversationAttachmentSupport.composerFileChip(for:)
