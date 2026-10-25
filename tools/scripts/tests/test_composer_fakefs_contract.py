@@ -70,6 +70,16 @@ class FakefsComposerContractTests(unittest.TestCase):
         self.assertIn("SshSessionStore.shared.sessionId", CONVERSATION)
         self.assertIn("SshSessionStore.shared.sessionId", HOME)
 
+    def test_ssh_remote_zip_transfer(self):
+        self.assertIn("importComposerSSHURL", CONVERSATION)
+        self.assertIn("importComposerSSHURL", HOME)
+        for method in ["sshAttachmentBegin", "sshAttachmentAppend", "sshAttachmentVerify", "sshAttachmentCancel"]:
+            self.assertIn(method, ATTACHMENT)
+        self.assertIn("remoteByteCount", ATTACHMENT)
+        self.assertIn("SshSessionStore.shared.sessionId", CONVERSATION)
+        self.assertIn("SshSessionStore.shared.sessionId", HOME)
+        self.assertIn("attachment.remotePath ?? attachment.fakefsPath", ATTACHMENT)
+
     def test_import_failure_keeps_draft_and_blocks_inflight_submission(self):
         self.assertIn("pendingFileImports += 1", CONVERSATION)
         self.assertIn("pendingFileImports += 1", HOME)
