@@ -229,3 +229,9 @@ Validation includes metadata round trips, malformed TOML/YAML, binary ZIP
 extraction and boundary rejection, P-256 signature verification, Slingshot tests,
 the full mobile host test suite, and the actual iOS-target ABI checker. Native
 archives and installed-device behavior remain separate release gates.
+
+Actual UniFFI generation exposed Askama's borrowed-string configuration
+contract. A licensed toml 0.9.12 source snapshot forwards already-borrowed
+input strings to Serde's borrowed-string visitor; decoded owned strings keep
+their existing path. This uses no leaks or unsafe lifetime conversion.
+The borrowed-config regression and actual Swift/Kotlin generators pass.

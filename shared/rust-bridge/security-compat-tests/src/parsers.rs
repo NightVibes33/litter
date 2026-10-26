@@ -46,6 +46,28 @@ fn toml_metadata_preserves_legacy_parser_entrypoint_and_errors() {
 }
 
 #[test]
+fn toml_template_configuration_can_borrow_unescaped_input_strings() {
+    #[derive(Deserialize)]
+    struct General<'a> {
+        #[serde(borrow)]
+        dirs: Vec<&'a str>,
+        default_syntax: &'a str,
+    }
+    #[derive(Deserialize)]
+    struct Config<'a> {
+        #[serde(borrow)]
+        general: General<'a>,
+    }
+    let source = "[general]\ndirs = ['src/scaffolding/templates', 'src/bindings/swift/templates']\ndefault_syntax = 'default'\n";
+    let config: Config<'_> = basic_toml::from_str(source).unwrap();
+    assert_eq!(config.general.dirs[0], "src/scaffolding/templates");
+    assert_eq!(config.general.default_syntax, "default");
+    let start = source.as_ptr() as usize;
+    let borrowed = config.general.dirs[0].as_ptr() as usize;
+    assert!((start..start + source.len()).contains(&borrowed));
+}
+
+#[test]
 fn fixed_zip_extracts_binary_data_and_rejects_parent_traversal() {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let options = zip::write::SimpleFileOptions::default();
