@@ -1083,6 +1083,12 @@ final class AppModel {
         tokens: ChatGPTOAuthTokenBundle
     ) async -> Bool {
         do {
+            // A token refresh can suspend while the user selects another
+            // account. Do not attach the stale account when it completes.
+            guard !Task.isCancelled,
+                  try ChatGPTOAuthTokenStore.shared.load()?.accountID == tokens.accountID else {
+                return false
+            }
             _ = try await client.loginAccount(
                 serverId: serverId,
                 params: .chatgptAuthTokens(

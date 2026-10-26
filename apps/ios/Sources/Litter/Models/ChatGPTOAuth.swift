@@ -128,9 +128,11 @@ final class ChatGPTOAuthTokenStore {
         return legacy
     }
 
-    func save(_ tokens: ChatGPTOAuthTokenBundle) throws {
+    func save(_ tokens: ChatGPTOAuthTokenBundle, makeActive: Bool = true) throws {
         try saveKeychainToken(tokens, accountName: keychainAccountName(for: tokens.accountID))
-        activeAccountID = tokens.accountID
+        if makeActive {
+            activeAccountID = tokens.accountID
+        }
     }
 
     func storedAccounts() throws -> [StoredChatGPTAccountSummary] {
@@ -438,7 +440,7 @@ enum ChatGPTOAuth {
            refreshed.accountID != previousAccountID {
             throw ChatGPTOAuthError.refreshAccountMismatch
         }
-        try ChatGPTOAuthTokenStore.shared.save(refreshed)
+        try ChatGPTOAuthTokenStore.shared.save(refreshed, makeActive: false)
         return refreshed
     }
 
