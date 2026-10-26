@@ -1,0 +1,42 @@
+{
+  "apps/ios/Sources/Litter/Views/ConversationTimelineView.swift": {
+    "upstream_blob": "947fa1772b817600c7516c17938a3b156dc1bc9d",
+    "fork_blob": "c0a5530b40fd4d0804646e99a02531f618c3cd96",
+    "reason": "Disambiguate replayed transcript row IDs and avoid duplicate-key crashes."
+  },
+  "apps/ios/Sources/Litter/Views/ConversationComposerExpandedView.swift": {
+    "upstream_blob": "626fc8cafca73851289c4bb9e2263382a6bcb831",
+    "fork_blob": "4430fd2e13233f623fde55f2815380bddad7e98e",
+    "reason": "Cancel delayed keyboard focus when the expanded composer is dismissed."
+  },
+  "apps/ios/Sources/Litter/Views/ConversationComposerModalCoordinator.swift": {
+    "upstream_blob": "b428fe13b26699de64e3aa78433c334f22bca194",
+    "fork_blob": "fc1725d71e8e9c52bdeb3e0346c3c349d1c8ed3c",
+    "reason": "Import all selected files and report picker errors for the local/SSH attachment handoff."
+  },
+  "apps/ios/Sources/Litter/Views/QuietSessionList.swift": {
+    "upstream_blob": "6f649d6dea5ac7f2b70c40c65de265d49a44ccee",
+    "fork_blob": "3a1cee4d649cd45073291613e6893d88ba863576",
+    "reason": "Keep the first position for replayed session keys instead of trapping."
+  },
+  "apps/ios/Sources/Litter/Views/TranscriptTurn.swift": {
+    "upstream_blob": "1a88691def15b3158327343c849f1b75414c8cbf",
+    "fork_blob": "b2d0c5a252d22030d7c5181bfdf5162eb419ef56",
+    "reason": "Tolerate replayed scroll and collapse identities instead of trapping."
+  },
+  "shared/rust-bridge/codex-mobile-client/src/store/snapshot.rs": {
+    "upstream_blob": "c80fdc2f09302dd5133cf734da0a36e78f52791b",
+    "fork_blob": "72f6003f023f5d6f67b3e710964a941d30f8fe30",
+    "reason": "Retain unacknowledged steering drafts for explicit manual retry, preventing automatic duplicate submissions."
+  },
+  "apps/ios/Sources/Litter/Views/SessionsDerivation.swift": {
+    "upstream_blob": "f2fa61c08b168863911544cb057f74ae6e0dea44",
+    "fork_blob": "f6b5503ce90820dbb0fe25d4a846e27a969bf48c",
+    "reason": "Handle replayed thread keys and frozen ordering without duplicate-key crashes."
+  },
+  "apps/ios/Tests/LitterTests/PerformanceHelpersTests.swift": {
+    "upstream_blob": "2a038d67cd3efb98e19dfdb4ef544b8c7fbe6115",
+    "fork_blob": "49a2c5ab4cc1b1dd125ec7ad6e38b29a851cc365",
+    "reason": "Regressions for duplicate transcript, scroll, and collapse identities."
+  }
+}

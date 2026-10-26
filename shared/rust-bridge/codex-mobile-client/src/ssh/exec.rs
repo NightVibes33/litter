@@ -174,6 +174,22 @@ impl SshClient {
     /// Write `content` to a remote file at `remote_path` via `cat`. Avoids
     /// an SFTP dependency by piping stdin into a shell command.
     pub async fn upload(&self, content: &[u8], remote_path: &str) -> Result<(), SshError> {
+        self.upload_command(content, &format!("cat > {}", shell_quote(remote_path)))
+            .await
+    }
+
+    /// Stream bytes on stdin so large chunks never become command-line arguments.
+    pub(crate) async fn append_upload(
+        &self,
+        content: &[u8],
+        remote_path: &str,
+        shell: RemoteShell,
+    ) -> Result<(), SshError> {
+        let command = super::attachment::append_command(remote_path, shell);
+        self.upload_command(content, &command).await
+    }
+
+    async fn upload_command(&self, content: &[u8], command: &str) -> Result<(), SshError> {
         let handle = self.handle.lock().await;
         if handle.is_closed() {
             return Err(SshError::Disconnected);
@@ -184,9 +200,8 @@ impl SshClient {
             .map_err(|e| SshError::ConnectionFailed(format!("open session: {e}")))?;
         drop(handle);
 
-        let cmd = format!("cat > {}", shell_quote(remote_path));
         channel
-            .exec(true, cmd.as_bytes())
+            .exec(true, command.as_bytes())
             .await
             .map_err(|e| SshError::ConnectionFailed(format!("exec upload: {e}")))?;
 
@@ -200,11 +215,11 @@ impl SshClient {
             .await
             .map_err(|e| SshError::ConnectionFailed(format!("upload eof: {e}")))?;
 
-        let mut exit_code: u32 = 0;
+        let mut exit_code = None;
         loop {
             match channel.wait().await {
                 Some(ChannelMsg::ExitStatus { exit_status }) => {
-                    exit_code = exit_status;
+                    exit_code = Some(exit_status);
                 }
                 Some(ChannelMsg::Eof | ChannelMsg::Close) => {}
                 None => break,
@@ -212,10 +227,10 @@ impl SshClient {
             }
         }
 
-        if exit_code != 0 {
+        if exit_code != Some(0) {
             return Err(SshError::ExecFailed {
-                exit_code,
-                stderr: format!("upload to {remote_path} failed"),
+                exit_code: exit_code.unwrap_or(255),
+                stderr: "SSH upload did not finish successfully".to_string(),
             });
         }
 

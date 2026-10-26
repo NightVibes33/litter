@@ -5,6 +5,10 @@ actor SshSessionStore {
 
     private var sessionIdsByServerId: [String: String] = [:]
 
+    func sessionId(for serverId: String) -> String? {
+        sessionIdsByServerId[serverId]
+    }
+
     func record(sessionId: String, for serverId: String) {
         LLog.trace("ssh", "record SSH session", fields: ["serverId": serverId, "sessionId": sessionId])
         sessionIdsByServerId[serverId] = sessionId

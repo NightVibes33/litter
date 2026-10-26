@@ -38,6 +38,7 @@ pub struct SshBridge {
     pub(crate) rt: Arc<tokio::runtime::Runtime>,
     pub(crate) ssh_sessions: Mutex<std::collections::HashMap<String, ManagedSshSession>>,
     pub(crate) next_ssh_session_id: AtomicU64,
+    pub(crate) ssh_attachments: Mutex<std::collections::HashSet<(String, String)>>,
 }
 
 #[derive(uniffi::Record)]
@@ -72,6 +73,7 @@ impl SshBridge {
             rt: shared_runtime(),
             ssh_sessions: Mutex::new(std::collections::HashMap::new()),
             next_ssh_session_id: AtomicU64::new(1),
+            ssh_attachments: Mutex::new(std::collections::HashSet::new()),
         }
     }
 
@@ -424,6 +426,10 @@ impl SshBridge {
             .ok_or_else(|| {
                 ClientError::InvalidParams(format!("unknown SSH session id: {session_id}"))
             })?;
+        self.ssh_attachments
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .retain(|(id, _)| id != &session_id);
         let rt = Arc::clone(&self.rt);
         tokio::task::spawn_blocking(move || {
             rt.block_on(async move {

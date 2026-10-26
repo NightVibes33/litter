@@ -32,6 +32,7 @@ mod host_key;
 mod keychain;
 mod port_forward;
 mod probes;
+pub(crate) mod attachment;
 mod resolve_binary;
 mod terminal_channel;
 mod types;

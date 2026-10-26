@@ -16,6 +16,7 @@ mod remote_path;
 mod server;
 pub(crate) mod shared;
 mod ssh;
+mod ssh_attachments;
 mod terminal;
 
 pub use crate::ssh_bridge::{AgentAvailabilityStatus, RemoteAgentAvailability, SshBridgeTransport};

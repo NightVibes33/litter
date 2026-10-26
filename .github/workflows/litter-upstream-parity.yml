@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/litter-upstream-parity.yml'
+      - 'tools/scripts/upstream_parity.py'
+      - 'tools/scripts/litter-reviewed-core.json'
+      - 'tools/scripts/tests/test_upstream_parity.py'
       - 'apps/ios/Sources/Litter/**'
       - 'apps/ios/Tests/LitterTests/**'
       - 'shared/rust-bridge/codex-mobile-client/src/**'
@@ -37,6 +40,9 @@ jobs:
       - name: Fetch current official Litter main
         run: git -c protocol.version=2 fetch --no-tags --filter=blob:none https://github.com/0xSero/litter.git main
 
+      - name: Test reviewed core classification
+        run: python3 -m unittest discover -s tools/scripts/tests -p test_upstream_parity.py
+
       - name: Compare upstream history and performance/chat core
         shell: bash
         run: |
@@ -44,6 +50,7 @@ jobs:
           import json
           import os
           import subprocess
+          import sys
           from pathlib import Path
 
           groups = {
@@ -53,8 +60,9 @@ jobs:
               "android_kotlin": ("apps/android/", ".kt"),
           }
 
-          # These performance and conversation primitives must remain identical
-          # to official Litter. Alley Cat's explicitly extended entrypoints,
+          # Protected sources must match upstream or an explicitly reviewed pair
+          # of upstream/fork blob hashes. Any further change fails this check.
+          # Alley Cat's explicitly extended entrypoints,
           # runtime integrations and branding are reported as custom changes,
           # not silently replaced by upstream code.
           protected = (
@@ -143,13 +151,17 @@ jobs:
               }
               missing_paths.extend(missing)
 
-          drift = sorted(p for p in protected if p not in upstream or upstream[p] != fork.get(p))
+          sys.path.insert(0, "tools/scripts")
+          from upstream_parity import classify_drift
+          reviewed = json.loads(Path("tools/scripts/litter-reviewed-core.json").read_text())
+          drift, reviewed_changes = classify_drift(protected, upstream, fork, reviewed)
           report = {
               "fork_commit": output("rev-parse", "HEAD").decode().strip(),
               "upstream_commit": output("rev-parse", "FETCH_HEAD").decode().strip(),
               "upstream_history_missing": behind,
               "upstream_files_missing": sorted(missing_paths),
               "protected_core_drift": drift,
+              "reviewed_core_changes": {p: reviewed[p] for p in reviewed_changes},
               "groups": summary,
           }
 
@@ -178,6 +190,9 @@ jobs:
           ]
           if drift:
               lines.extend(f"- `{p}`" for p in drift)
+          if reviewed_changes:
+              lines.extend(("", "Reviewed core changes (both blob hashes verified):"))
+              lines.extend(f"- `{p}`: {reviewed[p]['reason']}" for p in reviewed_changes)
           # Keep extended entrypoint differences visible even if all protected
           # upstream foundations match byte-for-byte.
           adapted = sorted(
@@ -205,7 +220,7 @@ jobs:
               if drift:
                   print("::error::Protected Litter chat/performance primitives no longer match upstream.")
               raise SystemExit(1)
-          print("Upstream history and protected chat/performance sources verified.")
+          print("Upstream history and protected chat/performance sources verified; reviewed fork changes reported separately.")
 
           PY
 
