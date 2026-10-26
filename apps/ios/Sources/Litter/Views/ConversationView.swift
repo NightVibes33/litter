@@ -3479,7 +3479,13 @@ struct QueuedFollowUpsPreviewView: View {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 14))
                 .contentShape(Rectangle())
-                .onLongPressGesture { beginEditing(preview) }
+                .contextMenu {
+                    if preview.kind == .message {
+                        Button { beginEditing(preview) } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                    }
+                }
                 .accessibilityAction(named: "Edit queued message") { beginEditing(preview) }
             }
         }
@@ -3489,10 +3495,25 @@ struct QueuedFollowUpsPreviewView: View {
         .sheet(isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
             NavigationStack {
                 Form {
-                    TextEditor(text: $editText).frame(minHeight: 160)
-                    if let editError { Text(editError).foregroundStyle(.red) }
+                    TextEditor(text: $editText)
+                        .litterFont(.body)
+                        .foregroundColor(LitterTheme.textPrimary)
+                        .scrollContentBackground(.hidden)
+                        .frame(minHeight: 160)
+                        .listRowBackground(LitterTheme.surface)
+                    if let editError {
+                        Text(editError)
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.danger)
+                            .listRowBackground(LitterTheme.surface)
+                    }
                 }
+                .scrollContentBackground(.hidden)
+                .background(LitterTheme.backgroundGradient)
+                .tint(LitterTheme.accent)
                 .navigationTitle("Edit queued message")
+                .toolbarBackground(LitterTheme.surface, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Cancel") { editing = nil }.disabled(isSaving)
