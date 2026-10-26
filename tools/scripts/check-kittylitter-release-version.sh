@@ -13,8 +13,8 @@ tag="v$version"
 for source in \
   apps/ios/Sources/Litter/Views/AlleycatAddServerSheet.swift \
   apps/android/app/src/main/java/com/litter/android/ui/discovery/AlleycatAddServerSheet.kt; do
-  if ! grep -Fq "/releases/download/$tag/kittylitter-npm-package.tar.gz" "$source"; then
-    echo "$source must pair with kittylitter $tag" >&2
+  if ! grep -Fq "https://github.com/0xSero/litter/releases/download/v0.3.11/kittylitter-npm-package.tar.gz" "$source"; then
+    echo "$source must use the upstream Kittylitter pairing download" >&2
     exit 1
   fi
 done
