@@ -10,9 +10,12 @@ permissions:
 jobs:
   v8:
     strategy:
+      fail-fast: false
       matrix:
         target: [aarch64-apple-ios, aarch64-apple-ios-sim]
-    runs-on: macos-26
+    # Avoid the ARM hosted pool that failed to allocate runners. The build
+    # explicitly cross-compiles each iOS target; cached artifacts are target-specific.
+    runs-on: macos-26-intel
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v5
