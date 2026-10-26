@@ -33,6 +33,7 @@ inherits = "release"
 lto = "thin"
 
 [patch.crates-io]
+serde_yaml = { path = "../../shared/rust-bridge/vendor/security-compat/serde_yaml" }
 paste = { path = "../../shared/rust-bridge/vendor/security-compat/paste" }
 json = { path = "../../shared/rust-bridge/vendor/security-compat/json" }
 ansi_term = { path = "../../shared/rust-bridge/vendor/security-compat/ansi_term" }

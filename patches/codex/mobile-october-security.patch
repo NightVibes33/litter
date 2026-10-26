@@ -1,0 +1,166 @@
+--- a/codex-rs/keyring-store/Cargo.toml
++++ b/codex-rs/keyring-store/Cargo.toml
+@@ -12,8 +12,8 @@
+ tracing = { workspace = true }
+ 
+ [target.'cfg(target_os = "linux")'.dependencies]
+-secret-service = "4"
+-keyring = { workspace = true, features = ["linux-native-async-persistent"] }
++secret-service = { package = "dbus-secret-service", version = "4.1" }
++keyring = { workspace = true, features = ["linux-native-sync-persistent", "vendored"] }
+ 
+ [target.'cfg(target_os = "macos")'.dependencies]
+ security-framework = "3"
+@@ -30,3 +30,6 @@
+ 
+ [lib]
+ doctest = false
++
++[target.'cfg(target_os = "linux")'.dev-dependencies]
++dbus = { version = "0.9", features = ["vendored"] }
+--- a/codex-rs/keyring-store/src/error_kind.rs
++++ b/codex-rs/keyring-store/src/error_kind.rs
+@@ -28,6 +28,14 @@
+             match error {
+                 secret_service::Error::Locked => return ErrorKind::WouldBlock,
+                 secret_service::Error::Unavailable => return ErrorKind::NotConnected,
++                secret_service::Error::Dbus(error) => {
++                    return match error.name() {
++                        Some("org.freedesktop.DBus.Error.AccessDenied" | "org.freedesktop.DBus.Error.AuthFailed") => ErrorKind::PermissionDenied,
++                        Some("org.freedesktop.DBus.Error.NoReply" | "org.freedesktop.DBus.Error.Timeout") => ErrorKind::TimedOut,
++                        Some("org.freedesktop.DBus.Error.Disconnected" | "org.freedesktop.DBus.Error.NoServer" | "org.freedesktop.DBus.Error.ServiceUnknown") => ErrorKind::NotConnected,
++                        _ => ErrorKind::Other,
++                    };
++                }
+                 _ => {}
+             }
+         }
+--- a/codex-rs/keyring-store/src/error_kind_tests.rs
++++ b/codex-rs/keyring-store/src/error_kind_tests.rs
+@@ -79,9 +79,9 @@
+ #[cfg(target_os = "linux")]
+ #[test]
+ fn secret_service_dbus_io_error_preserves_its_kind() {
+-    let error = secret_service::Error::Zbus(
+-        std::io::Error::new(ErrorKind::PermissionDenied, "private D-Bus socket").into(),
+-    );
++    let error = secret_service::Error::Dbus(dbus::Error::new_custom(
++        "org.freedesktop.DBus.Error.AccessDenied", "private D-Bus socket",
++    ));
+     let error = CredentialStoreError::new(keyring::Error::PlatformFailure(Box::new(error)));
+     assert_eq!(
+         std::io::Error::from(error).kind(),
+--- a/codex-rs/Cargo.toml
++++ b/codex-rs/Cargo.toml
+@@ -544,7 +544,7 @@
+ whoami = "1.6.1"
+ wildmatch = "2.6.1"
+ winapi-util = "0.1.11"
+-zip = "2.4.2"
++zip = "9.1.1"
+ zstd = "0.13"
+ 
+ wiremock = "0.6"
+--- a/codex-rs/core-plugins/src/startup_sync.rs
++++ b/codex-rs/core-plugins/src/startup_sync.rs
+@@ -1049,7 +1049,7 @@
+         let Some(relative_path) = entry.enclosed_name() else {
+             return Err(format!(
+                 "curated plugins zip entry `{}` escapes extraction root",
+-                entry.name()
++                entry.name().unwrap_or_else(|_| "<invalid ZIP filename>".into())
+             ));
+         };
+ 
+@@ -1106,13 +1106,13 @@
+ }
+ 
+ #[cfg(unix)]
+-fn apply_zip_permissions(entry: &zip::read::ZipFile<'_>, output_path: &Path) -> Result<(), String> {
++fn apply_zip_permissions<R: std::io::Read + ?Sized>(entry: &zip::read::ZipFile<'_, R>, output_path: &Path) -> Result<(), String> {
+     use std::os::unix::fs::PermissionsExt;
+ 
+     let Some(mode) = entry.unix_mode() else {
+         return Ok(());
+     };
+-    std::fs::set_permissions(output_path, std::fs::Permissions::from_mode(mode)).map_err(|err| {
++    std::fs::set_permissions(output_path, std::fs::Permissions::from_mode(mode & 0o777)).map_err(|err| {
+         format!(
+             "failed to set permissions on curated plugins file {}: {err}",
+             output_path.display()
+@@ -1121,8 +1121,8 @@
+ }
+ 
+ #[cfg(not(unix))]
+-fn apply_zip_permissions(
+-    _entry: &zip::read::ZipFile<'_>,
++fn apply_zip_permissions<R: std::io::Read + ?Sized>(
++    _entry: &zip::read::ZipFile<'_, R>,
+     _output_path: &Path,
+ ) -> Result<(), String> {
+     Ok(())
+--- a/codex-rs/rmcp-client/Cargo.toml
++++ b/codex-rs/rmcp-client/Cargo.toml
+@@ -81,7 +81,7 @@
+ libc = { workspace = true }
+ 
+ [target.'cfg(target_os = "linux")'.dependencies]
+-keyring = { workspace = true, features = ["linux-native-async-persistent"] }
++keyring = { workspace = true, features = ["linux-native-sync-persistent", "vendored"] }
+ 
+ [target.'cfg(target_os = "macos")'.dependencies]
+ keyring = { workspace = true, features = ["apple-native"] }
+--- a/codex-rs/user-verification/Cargo.toml
++++ b/codex-rs/user-verification/Cargo.toml
+@@ -9,7 +9,7 @@
+ 
+ [dependencies]
+ base64 = { workspace = true }
+-p256 = { version = "0.13", default-features = false, features = ["arithmetic", "pkcs8", "std"] }
++p256 = { version = "0.14", default-features = false, features = ["arithmetic", "pkcs8", "std"] }
+ sha2 = { workspace = true }
+ thiserror = { workspace = true }
+ tracing = { workspace = true }
+@@ -24,7 +24,7 @@
+ security-framework-sys = "2.15"
+ 
+ [dev-dependencies]
+-p256 = { version = "0.13", features = ["ecdsa"] }
++p256 = { version = "0.14", features = ["ecdsa"] }
+ pretty_assertions = { workspace = true }
+ tempfile = { workspace = true }
+ 
+--- a/codex-rs/core-plugins/src/command_migration.rs
++++ b/codex-rs/core-plugins/src/command_migration.rs
+@@ -327,10 +327,10 @@
+ 
+ fn yaml_scalar(value: &YamlValue) -> Option<String> {
+     match value {
+-        YamlValue::String(value) => Some(value.trim().to_string()),
+-        YamlValue::Bool(value) => Some(value.to_string()),
+-        YamlValue::Number(value) => Some(value.to_string()),
+-        YamlValue::Null | YamlValue::Sequence(_) | YamlValue::Mapping(_) | YamlValue::Tagged(_) => {
++        YamlValue::String(value, _) => Some(value.trim().to_string()),
++        YamlValue::Bool(value, _) => Some(value.to_string()),
++        YamlValue::Number(value, _) => Some(value.to_string()),
++        YamlValue::Null(_) | YamlValue::Alias(_) | YamlValue::Sequence(_) | YamlValue::Mapping(_) | YamlValue::Tagged(_) => {
+             None
+         }
+     }
+--- a/codex-rs/external-agent-migration/src/subagents.rs
++++ b/codex-rs/external-agent-migration/src/subagents.rs
+@@ -188,10 +188,10 @@
+ 
+ fn frontmatter_value_from_yaml(value: &YamlValue) -> FrontmatterValue {
+     match value {
+-        YamlValue::String(value) => FrontmatterValue::Scalar(value.trim().to_string()),
+-        YamlValue::Bool(value) => FrontmatterValue::Scalar(value.to_string()),
+-        YamlValue::Number(value) => FrontmatterValue::Scalar(value.to_string()),
+-        YamlValue::Null | YamlValue::Sequence(_) | YamlValue::Mapping(_) | YamlValue::Tagged(_) => {
++        YamlValue::String(value, _) => FrontmatterValue::Scalar(value.trim().to_string()),
++        YamlValue::Bool(value, _) => FrontmatterValue::Scalar(value.to_string()),
++        YamlValue::Number(value, _) => FrontmatterValue::Scalar(value.to_string()),
++        YamlValue::Null(_) | YamlValue::Alias(_) | YamlValue::Sequence(_) | YamlValue::Mapping(_) | YamlValue::Tagged(_) => {
+             FrontmatterValue::Other
+         }
+     }

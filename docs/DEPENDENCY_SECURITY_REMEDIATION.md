@@ -195,3 +195,37 @@ The production-lockfile iOS check and standalone iOS/macOS checks pass. Both
 iOS lanes now check the complete Rust graph with the SDK and V8 assets before
 static-library compilation. See IOS_RUNNER_REVIEW.md for the downstream review
 and the remaining real archive, packaging, upload and device validation gates.
+
+## October 26 audit follow-up
+
+The audit now covers ten tracked Cargo lockfiles. The refreshed inventory has
+zero registry advisory matches and zero bundled OpenSSL baseline findings.
+TLS, WebPKI trust roots, Quinn, Tokio, ctutils, and crypto-bigint are updated
+across the shipping and standalone vendor graphs. Unused vendor lockfiles
+remain audited rather than omitted. These counts are independent of GitHub's
+private Dependabot count.
+
+Legacy TOML parser calls now delegate to maintained toml. Legacy YAML calls use
+maintained serde_yaml_bw, with its granit parser and libyaml-norway emitter;
+Codex's scalar matching accounts for the new anchor metadata and alias variant.
+The wrappers contain no legacy parser implementation. ZIP moves to 9.1.1 in
+Codex and minimuxer; the manual plugin unpacker also strips special Unix mode
+bits. The Apple ABI checker tracks ZIP's required Nix 0.31.3 dependency.
+
+P-256 moves to 0.14 for Slingshot, native verification, and AWS DPoP. Slingshot
+and DPoP use the current fallible system-CSPRNG API. Existing PKCS#8/SEC1 keys,
+SPKI public keys, ES256 proofs, and randomized DPoP signatures retain their wire
+formats. The source-patched AWS package preserves every credential provider.
+
+Linux secure credentials retain keyutils and persistent Secret Service storage
+through dbus-secret-service. Both Codex callers select this synchronous backend;
+the unused async backend is explicitly unavailable in the pinned keyring package,
+removing the retired standalone zvariant/names dependencies. Apple Keychain and
+Windows Credential Manager are unchanged. Service/account attributes and native
+error classification are preserved. No plaintext fallback is introduced.
+
+Source packages and compatibility adapters require review beyond an OSV scan.
+Validation includes metadata round trips, malformed TOML/YAML, binary ZIP
+extraction and boundary rejection, P-256 signature verification, Slingshot tests,
+the full mobile host test suite, and the actual iOS-target ABI checker. Native
+archives and installed-device behavior remain separate release gates.

@@ -2,8 +2,8 @@ use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use p256::ecdsa::signature::Signer;
 use p256::ecdsa::{Signature, SigningKey};
+use p256::elliptic_curve::Generate;
 use p256::pkcs8::{DecodePrivateKey, EncodePrivateKey, EncodePublicKey};
-use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tracing::warn;
@@ -79,7 +79,8 @@ struct SignedPayloadEnvelope<'a, T: Serialize> {
 
 impl DeviceKeyEnrollment {
     pub fn generate(account_user_id: String, client_id: String) -> Result<Self, SlingshotApiError> {
-        let signing_key = SigningKey::random(&mut OsRng);
+        let signing_key = SigningKey::try_generate_from_rng(&mut getrandom::SysRng)
+            .map_err(|error| SlingshotApiError::Crypto(error.to_string()))?;
         let private_key_pkcs8_der_base64 = STANDARD.encode(
             signing_key
                 .to_pkcs8_der()

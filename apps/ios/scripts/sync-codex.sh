@@ -27,6 +27,7 @@ PATCH_FILES=(
     "$REPO_DIR/patches/codex/realtime-handoff-server-hint.patch"
     "$REPO_DIR/patches/codex/realtime-dynamic-tools.patch"
     "$REPO_DIR/patches/codex/realtime-client-controlled-handoff.patch"
+    "$REPO_DIR/patches/codex/mobile-october-security.patch"
 )
 
 patch_already_upstreamed() {

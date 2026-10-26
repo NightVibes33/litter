@@ -99,7 +99,7 @@ standalone vendor lockfiles. The registry inventory is reproducible with
 `tools/scripts/audit-rust-dependencies.py`; local compatibility adapters require
 source review in addition to registry checks.
 
-The next candidate registry inventory reports zero advisories across nine tracked
+The October 26 registry inventory reports zero advisories across ten tracked
 Cargo lockfiles. Maintenance implementations are replaced by maintained
 backends, and SSH RSA now uses AWS-LC; optional idevice classic certificates use
 OpenSSL. Both Rust source bundles now use OpenSSL 3.5.9, and Feather's

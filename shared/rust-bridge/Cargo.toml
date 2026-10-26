@@ -47,7 +47,7 @@ regex = "1"
 base64 = "0.22"
 bytes = "1.10.1"
 sha2 = "0.10"
-p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
+p256 = { version = "0.14", features = ["ecdsa", "pkcs8"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 russh = "0.63.2"
 futures = "0.3"
@@ -99,6 +99,10 @@ debug = 0
 codegen-units = 16
 
 [patch.crates-io]
+keyring = { path = "vendor/keyring-3.6.3" }
+aws-config = { path = "vendor/aws-config-1.8.14" }
+basic-toml = { path = "vendor/security-compat/basic-toml" }
+serde_yaml = { path = "vendor/security-compat/serde_yaml" }
 netwatch = { path = "vendor/netwatch-0.19.1" }
 netdev = { path = "vendor/netdev-0.45.0" }
 num_threads = { path = "vendor/num_threads-0.1.7" }

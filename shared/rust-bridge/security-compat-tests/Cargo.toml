@@ -16,5 +16,10 @@ signature = "3"
 russh = { workspace = true }
 
 base64 = "0.22"
+basic-toml = { path = "../vendor/security-compat/basic-toml" }
+serde_yaml = { path = "../vendor/security-compat/serde_yaml" }
+serde = { version = "1", features = ["derive"] }
+zip = { version = "9.1.1", default-features = false, features = ["deflate"] }
+tempfile = "3"
 
 openssl = { version = "0.10.80", features = ["vendored"] }

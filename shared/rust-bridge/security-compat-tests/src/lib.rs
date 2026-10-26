@@ -1,4 +1,7 @@
 #[cfg(test)]
+mod parsers;
+
+#[cfg(test)]
 mod tests {
     #[test]
     fn bundled_openssl_uses_reviewed_lts_security_release() {
