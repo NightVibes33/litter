@@ -3925,6 +3925,39 @@ impl MobileClient {
             .await
             .map(|_| ())
         };
+        // An expected-turn mismatch is a definitive rejection, not an
+        // ambiguous acknowledgement failure. Reconcile with the server before
+        // one retry; never infer the current turn from the error's wording.
+        if !sent_as_new_turn
+            && result.as_ref().is_err_and(|error| {
+                error.contains("expected active turn id") && error.contains("but found")
+            })
+        {
+            self.force_refresh_thread_authoritative(&key.server_id, &key.thread_id)
+                .await?;
+            if let Some(current_turn_id) = self.snapshot_thread(key)?.active_turn_id {
+                result = self
+                    .request_follow_up_ack::<upstream::TurnSteerResponse>(
+                        &key.server_id,
+                        upstream::ClientRequest::TurnSteer {
+                            request_id: upstream::RequestId::Integer(crate::next_request_id()),
+                            params: upstream::TurnSteerParams {
+                                thread_id: key.thread_id.clone(),
+                                input: draft.inputs.clone(),
+                                responsesapi_client_metadata: None,
+                                expected_turn_id: current_turn_id,
+                                ..Default::default()
+                            },
+                        },
+                    )
+                    .await
+                    .map(|_| ());
+            } else {
+                // Reconciliation confirmed that the rejected target has ended.
+                // Use the existing completion fallback below.
+                result = Err("no active turn to steer".to_string());
+            }
+        }
         // A definitive rejection means no input was accepted. If completion
         // has also reached our store, safely start the follow-up once. Never
         // apply this fallback to a timeout or a disconnect.

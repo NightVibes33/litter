@@ -2622,6 +2622,29 @@ mod mobile_client_tests {
         );
     }
 
+    #[tokio::test]
+    async fn stale_turn_steer_preserves_message_when_reconciliation_fails() {
+        let (client, key, id) = queued_steer_fixture(true);
+        let calls = Arc::new(StdMutex::new(Vec::new()));
+        let captured = Arc::clone(&calls);
+        install_steer_test_handler(&client, Arc::new(move |request| {
+            captured.lock().unwrap().push(request.method_name().to_string());
+            match request {
+                upstream::ClientRequest::TurnSteer { .. } => Err(RpcError::Deserialization(
+                    "server error -32600: expected active turn id 'new' but found 'old'".into(),
+                )),
+                upstream::ClientRequest::TurnStart { .. } => panic!("must not start a turn without authoritative state"),
+                _ => Err(RpcError::Deserialization("reconciliation unavailable".into())),
+            }
+        }));
+        assert!(client.steer_queued_follow_up(&key, &id).await.is_err());
+        let captured = calls.lock().unwrap();
+        assert_eq!(captured.iter().filter(|method| *method == "turn/steer").count(), 1);
+        assert!(captured.len() > 1, "must attempt authoritative reconciliation");
+        let thread = client.snapshot_thread(&key).unwrap();
+        assert!(thread.queued_follow_up_drafts.iter().any(|draft| draft.preview.id == id));
+    }
+
     #[test]
     fn cancelled_steer_restores_only_its_draft_without_autosending() {
         let (client, key, id) = queued_steer_fixture(true);
