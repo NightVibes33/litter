@@ -37,6 +37,7 @@ struct ConversationComposerContentView: View {
     let onDismissPendingUserInput: () -> Void
     let onImplementPlan: () -> Void
     let onDismissPlanImplementation: () -> Void
+    let onEditQueuedFollowUp: (AppQueuedFollowUpPreview, String) async throws -> Void
     let onSteerQueuedFollowUp: (AppQueuedFollowUpPreview) -> Void
     let onDeleteQueuedFollowUp: (AppQueuedFollowUpPreview) -> Void
     let onRemovePluginMention: (PluginMentionSelection) -> Void
@@ -81,6 +82,7 @@ struct ConversationComposerContentView: View {
         onDismissPlanImplementation: @escaping () -> Void = {},
         onSteerQueuedFollowUp: @escaping (AppQueuedFollowUpPreview) -> Void,
         onDeleteQueuedFollowUp: @escaping (AppQueuedFollowUpPreview) -> Void,
+        onEditQueuedFollowUp: @escaping (AppQueuedFollowUpPreview, String) async throws -> Void = { _, _ in },
         onRemovePluginMention: @escaping (PluginMentionSelection) -> Void = { _ in },
         onPasteImage: @escaping (UIImage) -> Void,
         onOpenModePicker: @escaping () -> Void,
@@ -122,6 +124,7 @@ struct ConversationComposerContentView: View {
         self.onDismissPlanImplementation = onDismissPlanImplementation
         self.onSteerQueuedFollowUp = onSteerQueuedFollowUp
         self.onDeleteQueuedFollowUp = onDeleteQueuedFollowUp
+        self.onEditQueuedFollowUp = onEditQueuedFollowUp
         self.onRemovePluginMention = onRemovePluginMention
         self.onPasteImage = onPasteImage
         self.onOpenModePicker = onOpenModePicker
@@ -216,7 +219,8 @@ struct ConversationComposerContentView: View {
                     QueuedFollowUpsPreviewView(
                         previews: queuedFollowUps,
                         onSteer: onSteerQueuedFollowUp,
-                        onDelete: onDeleteQueuedFollowUp
+                        onDelete: onDeleteQueuedFollowUp,
+                        onEdit: onEditQueuedFollowUp
                     )
                         .padding(.horizontal, 12)
                         .padding(.top, 8)

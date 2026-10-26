@@ -2646,6 +2646,18 @@ mod mobile_client_tests {
     }
 
     #[test]
+    fn queued_text_edit_updates_input_and_rejects_submitting_message() {
+        let (client, key, id) = queued_steer_fixture(true);
+        assert!(client.app_store.edit_queued_follow_up_text(&key, &id, "updated input"));
+        let thread = client.snapshot_thread(&key).unwrap();
+        let draft = thread.queued_follow_up_drafts.iter().find(|d| d.preview.id == id).unwrap();
+        assert_eq!(draft.preview.text, "updated input");
+        assert!(draft.inputs.iter().any(|i| matches!(i, upstream::UserInput::Text { text, .. } if text == "updated input")));
+        assert!(client.app_store.try_begin_steer_queued_follow_up(&key, &id).is_some());
+        assert!(!client.app_store.edit_queued_follow_up_text(&key, &id, "late edit"));
+    }
+
+    #[test]
     fn cancelled_steer_restores_only_its_draft_without_autosending() {
         let (client, key, id) = queued_steer_fixture(true);
         let (_, target) = client

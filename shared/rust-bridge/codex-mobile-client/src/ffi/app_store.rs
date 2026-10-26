@@ -531,6 +531,14 @@ impl AppStore {
         })
     }
 
+    pub fn edit_queued_follow_up_text(&self, key: ThreadKey, preview_id: String, text: String) -> Result<(), ClientError> {
+        if self.inner.app_store.edit_queued_follow_up_text(&key, &preview_id, &text) {
+            Ok(())
+        } else {
+            Err(ClientError::Rpc("This queued message can no longer be edited, or contains structured input.".into()))
+        }
+    }
+
     pub async fn delete_queued_follow_up(
         &self,
         key: ThreadKey,

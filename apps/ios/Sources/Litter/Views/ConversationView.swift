@@ -1619,6 +1619,9 @@ private struct ConversationInputBar: View {
                 onDismissPlanImplementation: dismissPlanImplementationPrompt,
                 onSteerQueuedFollowUp: steerQueuedFollowUp,
                 onDeleteQueuedFollowUp: deleteQueuedFollowUp,
+                onEditQueuedFollowUp: { preview, text in
+                    try appModel.store.editQueuedFollowUpText(key: snapshot.threadKey, previewId: preview.id, text: text)
+                },
                 onRemovePluginMention: removePluginMention,
                 onPasteImage: appendAttachedImage,
                 onOpenModePicker: onOpenModePicker,
@@ -3378,6 +3381,18 @@ struct QueuedFollowUpsPreviewView: View {
     let previews: [AppQueuedFollowUpPreview]
     let onSteer: (AppQueuedFollowUpPreview) -> Void
     let onDelete: (AppQueuedFollowUpPreview) -> Void
+    var onEdit: (AppQueuedFollowUpPreview, String) async throws -> Void = { _, _ in }
+    @State private var editing: AppQueuedFollowUpPreview?
+    @State private var editText = ""
+    @State private var editError: String?
+    @State private var isSaving = false
+
+    private func beginEditing(_ preview: AppQueuedFollowUpPreview) {
+        guard preview.kind == .message else { return }
+        editText = preview.text
+        editError = nil
+        editing = preview
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -3463,11 +3478,43 @@ struct QueuedFollowUpsPreviewView: View {
                         .stroke(style.border, lineWidth: 1)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 14))
+                .contentShape(Rectangle())
+                .onLongPressGesture { beginEditing(preview) }
+                .accessibilityAction(named: "Edit queued message") { beginEditing(preview) }
             }
         }
         .padding(12)
         .background(LitterTheme.codeBackground.opacity(0.92))
         .clipShape(RoundedRectangle(cornerRadius: 14))
+        .sheet(isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
+            NavigationStack {
+                Form {
+                    TextEditor(text: $editText).frame(minHeight: 160)
+                    if let editError { Text(editError).foregroundStyle(.red) }
+                }
+                .navigationTitle("Edit queued message")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { editing = nil }.disabled(isSaving)
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") {
+                            guard let preview = editing, !isSaving else { return }
+                            isSaving = true
+                            Task { @MainActor in
+                                defer { isSaving = false }
+                                do {
+                                    try await onEdit(preview, editText)
+                                    editing = nil
+                                } catch { editError = error.localizedDescription }
+                            }
+                        }
+                        .disabled(isSaving || editText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+            }
+            .interactiveDismissDisabled(isSaving)
+        }
     }
 }
 

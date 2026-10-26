@@ -1120,6 +1120,29 @@ impl AppStoreReducer {
         }
     }
 
+    pub fn edit_queued_follow_up_text(&self, key: &ThreadKey, id: &str, text: &str) -> bool {
+        if text.trim().is_empty() { return false; }
+        let updated = self.mutate_thread_with_result(key, |thread| {
+            let Some(draft) = thread.queued_follow_up_drafts.iter_mut().find(|d| d.preview.id == id) else { return false; };
+            if draft.preview.kind != super::snapshot::AppQueuedFollowUpKind::Message || draft.requires_manual_retry { return false; }
+            // Edit only a single plain text input. Preserve attachments and
+            // reject structured mentions whose ranges would become invalid.
+            let mut texts = draft.inputs.iter_mut().filter_map(|input| match input {
+                upstream::UserInput::Text { text, text_elements } => Some((text, text_elements)),
+                _ => None,
+            });
+            let Some((body, elements)) = texts.next() else { return false; };
+            if texts.next().is_some() || !elements.is_empty() { return false; }
+            *body = text.to_string();
+            draft.preview.text = text.to_string();
+            draft.source_message_json = None;
+            sync_thread_follow_up_projection(thread);
+            true
+        }).unwrap_or(false);
+        if updated { self.emit_thread_metadata_changed(key); }
+        updated
+    }
+
     pub(crate) fn remove_thread_follow_up_draft(&self, key: &ThreadKey, preview_id: &str) {
         if self
             .mutate_thread_with_result(key, |thread| {
