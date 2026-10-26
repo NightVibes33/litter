@@ -73,7 +73,7 @@ jobs:
           python3 -m unittest discover -s tools/scripts/tests -p 'test_nyxian_workspace_host_patch.py'
           python3 -m unittest discover -s tools/scripts/tests -p 'test_nyxian_objc_ci_imports.py'
 
-      - name: Run isolated encoder and download regressions
+      - name: Run isolated encoder, download, and readiness regressions
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -92,6 +92,8 @@ jobs:
           shutil.copyfile("apps/ios/Tests/LitterTests/DictationAudioEncoderTests.swift", root / "Tests/LitterTests/DictationAudioEncoderTests.swift")
           shutil.copyfile("apps/ios/Sources/Litter/Models/DownloadSupport.swift", root / "Sources/Litter/DownloadSupport.swift")
           shutil.copyfile("apps/ios/Tests/LitterTests/FileDownloadDriverTests.swift", root / "Tests/LitterTests/FileDownloadDriverTests.swift")
+          shutil.copyfile("apps/ios/Sources/Litter/Models/LocalRuntimeReadinessCoordinator.swift", root / "Sources/Litter/LocalRuntimeReadinessCoordinator.swift")
+          shutil.copyfile("apps/ios/Tests/LitterTests/LocalRuntimeReadinessCoordinatorTests.swift", root / "Tests/LitterTests/LocalRuntimeReadinessCoordinatorTests.swift")
           subprocess.run(["swift", "test", "--package-path", str(root)], check=True)
           PY
 

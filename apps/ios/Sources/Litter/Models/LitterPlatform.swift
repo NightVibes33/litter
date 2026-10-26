@@ -34,6 +34,12 @@ enum LitterPlatform {
 
     static let supportsLocalRuntime = !isCatalyst
 
+#if !targetEnvironment(macCatalyst)
+    private static let localRuntimeReadinessCoordinator = LocalRuntimeReadinessCoordinator {
+        try await performLocalRuntimeReadiness()
+    }
+#endif
+
     private enum LocalRuntimeBootstrapState {
         case idle
         case starting
@@ -83,7 +89,21 @@ enum LitterPlatform {
 #if targetEnvironment(macCatalyst)
         return
 #else
-        try await LocalRuntimeReadinessCoordinator.shared.ensureReady()
+        try await localRuntimeReadinessCoordinator.ensureReady()
+#endif
+    }
+
+    static func refreshLocalRuntimeReady() async throws {
+#if !targetEnvironment(macCatalyst)
+        try await localRuntimeReadinessCoordinator.ensureReady(forceRefresh: true)
+        let codexBridge = await IshFS.repairCodexHomeBridgeOnReadyRuntime()
+        guard codexBridge.exitCode == 0 else {
+            throw LocalRuntimeReadinessError.bridgeRepairFailed("Codex files")
+        }
+        let containerBridge = await IshFS.repairNativeContainerBridgeOnReadyRuntime()
+        guard containerBridge.exitCode == 0 else {
+            throw LocalRuntimeReadinessError.bridgeRepairFailed("iPhone files")
+        }
 #endif
     }
 
@@ -262,9 +282,12 @@ enum LocalRuntimeReadinessError: LocalizedError {
     case bundledRootfsMissing
     case sandboxDirectoriesUnavailable
     case preflightFailed(exitCode: Int32, output: String)
+    case bridgeRepairFailed(String)
 
     var errorDescription: String? {
         switch self {
+        case .bridgeRepairFailed(let name):
+            return "Couldn't refresh the \(name) connection. Please try again."
         case .bundledRootfsMissing:
             return "Local shell unavailable: bundled iSH filesystem is missing"
         case .sandboxDirectoriesUnavailable:
@@ -281,28 +304,3 @@ enum LocalRuntimeReadinessError: LocalizedError {
         }
     }
 }
-
-#if !targetEnvironment(macCatalyst)
-private actor LocalRuntimeReadinessCoordinator {
-    static let shared = LocalRuntimeReadinessCoordinator()
-
-    private var readinessTask: Task<Void, Error>?
-
-    func ensureReady() async throws {
-        if let readinessTask {
-            return try await readinessTask.value
-        }
-
-        let task = Task.detached(priority: .utility) {
-            try await LitterPlatform.performLocalRuntimeReadiness()
-        }
-        readinessTask = task
-        do {
-            try await task.value
-        } catch {
-            readinessTask = nil
-            throw error
-        }
-    }
-}
-#endif

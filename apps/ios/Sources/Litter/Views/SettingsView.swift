@@ -43,6 +43,9 @@ struct SettingsView: View {
                         category("Account", "person.crop.circle", value: accountValue, id: "settings.category.account") {
                             settingsPage("Account") { accountSection }
                         }
+                        if LitterPlatform.supportsLocalRuntime {
+                            SettingsLocalBridgeRefreshButton()
+                        }
                     } header: {
                         settingsHeader("Connections")
                     }
@@ -1138,7 +1141,10 @@ private struct SettingsConnectionAccountSection: View {
     @State private var authError: String?
     @State private var hasStoredApiKey = OpenAIApiKeyStore.shared.hasStoredKey
     @State private var hasStoredBaseURL = OpenAIApiKeyStore.shared.hasStoredBaseURL
-    @State private var hasStoredChatGPTTokens = false
+    @State private var storedChatGPTAccounts: [StoredChatGPTAccountSummary] = []
+    @State private var selectedChatGPTAccountID = ""
+
+    private var hasStoredChatGPTTokens: Bool { !storedChatGPTAccounts.isEmpty }
 
     var body: some View {
         Section {
@@ -1155,10 +1161,11 @@ private struct SettingsConnectionAccountSection: View {
                 Spacer()
                 if server.isLocal, server.account != nil {
                     Button("Logout") {
-                        Task { await logout() }
+                        performAccountAction { await logout() }
                     }
                     .litterFont(.footnote)
                     .foregroundColor(LitterTheme.danger)
+                    .disabled(isAuthWorking)
                 }
             }
             .settingsRowBackground()
@@ -1177,26 +1184,30 @@ private struct SettingsConnectionAccountSection: View {
                     .settingsRowBackground()
             }
 
-            if server.isLocal, !isChatGPTAccount {
+            if server.isLocal {
                 Button {
-                    Task {
-                        isAuthWorking = true
-                        await loginWithChatGPT()
-                        isAuthWorking = false
-                    }
+                    performAccountAction { await loginWithChatGPT() }
                 } label: {
                     HStack {
                         if isAuthWorking {
                             ProgressView().tint(LitterTheme.textPrimary).scaleEffect(0.8)
                         }
                         Image(systemName: "person.crop.circle.badge.checkmark")
-                        Text("Login with ChatGPT")
+                        Text(hasStoredChatGPTTokens ? "Add ChatGPT Account" : "Login with ChatGPT")
                             .litterFont(.body)
                     }
                     .foregroundColor(LitterTheme.textPrimary)
                 }
                 .disabled(isAuthWorking)
+                .accessibilityIdentifier("settings.addChatGPTAccount")
                 .settingsRowBackground()
+
+                if hasStoredChatGPTTokens {
+                    storedAccountControls
+                }
+                if LitterPlatform.supportsLocalRuntime {
+                    SettingsLocalBridgeRefreshButton(isAccountWorking: isAuthWorking)
+                }
             }
 
             if server.isLocal, allowsLocalEnvApiKey {
@@ -1290,6 +1301,7 @@ private struct SettingsConnectionAccountSection: View {
         } header: {
             SettingsSectionHeader("Account")
         }
+        .disabled(appModel.isRefreshingLocalBridge)
         .task(id: server.serverId) {
             refreshStoredCredentialFlags()
             await refreshAuthStatusIfNeeded()
@@ -1298,6 +1310,80 @@ private struct SettingsConnectionAccountSection: View {
 
     private var allowsLocalEnvApiKey: Bool {
         server.isLocal
+    }
+
+    private var storedAccountControls: some View {
+        Group {
+            Picker("Active ChatGPT Account", selection: $selectedChatGPTAccountID) {
+                ForEach(storedChatGPTAccounts) { account in
+                    Text(account.displayName).tag(account.accountID)
+                }
+            }
+            .pickerStyle(.menu)
+            .disabled(isAuthWorking)
+            .onChange(of: selectedChatGPTAccountID) { _, accountID in
+                guard !accountID.isEmpty,
+                      storedChatGPTAccounts.first(where: \.isActive)?.accountID != accountID else { return }
+                performAccountAction { await switchChatGPTAccount(accountID) }
+            }
+            .accessibilityIdentifier("settings.activeChatGPTAccount")
+            .settingsRowBackground()
+
+            if !isChatGPTAccount {
+                Button("Use Selected ChatGPT Account") {
+                    let accountID = selectedChatGPTAccountID
+                    performAccountAction { await switchChatGPTAccount(accountID) }
+                }
+                .disabled(isAuthWorking || selectedChatGPTAccountID.isEmpty)
+                .settingsRowBackground()
+            }
+
+            Button("Switch to Next Account") {
+                performAccountAction {
+                    do {
+                        _ = try await appModel.switchToNextStoredLocalChatGPTAccount(serverId: server.serverId)
+                        authError = nil
+                    } catch { authError = error.localizedDescription }
+                    refreshStoredCredentialFlags()
+                }
+            }
+            .disabled(isAuthWorking || storedChatGPTAccounts.count < 2)
+            .accessibilityIdentifier("settings.nextChatGPTAccount")
+            .settingsRowBackground()
+
+            Button("Remove Selected ChatGPT Account", role: .destructive) {
+                let accountID = selectedChatGPTAccountID
+                performAccountAction {
+                    do {
+                        try await appModel.removeStoredLocalChatGPTAccount(serverId: server.serverId, accountID: accountID)
+                        authError = nil
+                    } catch { authError = error.localizedDescription }
+                    refreshStoredCredentialFlags()
+                }
+            }
+            .disabled(isAuthWorking || selectedChatGPTAccountID.isEmpty)
+            .accessibilityIdentifier("settings.removeChatGPTAccount")
+            .settingsRowBackground()
+        }
+        .litterFont(.body)
+        .foregroundColor(LitterTheme.textPrimary)
+    }
+
+    private func performAccountAction(_ action: @escaping @MainActor () async -> Void) {
+        guard !isAuthWorking, !appModel.isRefreshingLocalBridge else { return }
+        isAuthWorking = true
+        Task {
+            defer { isAuthWorking = false }
+            await action()
+        }
+    }
+
+    private func switchChatGPTAccount(_ accountID: String) async {
+        do {
+            try await appModel.activateStoredLocalChatGPTAccount(serverId: server.serverId, accountID: accountID)
+            authError = nil
+        } catch { authError = error.localizedDescription }
+        refreshStoredCredentialFlags()
     }
 
     private var isChatGPTAccount: Bool {
@@ -1353,6 +1439,7 @@ private struct SettingsConnectionAccountSection: View {
     }
 
     private func loginWithChatGPT() async {
+        defer { refreshStoredCredentialFlags() }
         guard server.isLocal else {
             authError = "Settings login is only available for the local server."
             return
@@ -1371,11 +1458,12 @@ private struct SettingsConnectionAccountSection: View {
         hasStoredApiKey = OpenAIApiKeyStore.shared.hasStoredKey
         hasStoredBaseURL = OpenAIApiKeyStore.shared.hasStoredBaseURL
         do {
-            hasStoredChatGPTTokens = try ChatGPTOAuthTokenStore.shared.load() != nil
+            storedChatGPTAccounts = try ChatGPTOAuthTokenStore.shared.storedAccounts()
+            selectedChatGPTAccountID = storedChatGPTAccounts.first(where: \.isActive)?.accountID ?? ""
         } catch let error as ChatGPTOAuthError where error.isTransientKeychainAvailabilityFailure {
-            hasStoredChatGPTTokens = false
+            return
         } catch {
-            hasStoredChatGPTTokens = false
+            authError = error.localizedDescription
         }
     }
 
@@ -1479,8 +1567,11 @@ private struct SettingsConnectionAccountSection: View {
             return
         }
         do {
-            try? ChatGPTOAuthTokenStore.shared.clear()
-            try? OpenAIApiKeyStore.shared.clear()
+            if case .chatgpt? = server.account {
+                try ChatGPTOAuthTokenStore.shared.clearActiveAccount()
+            } else if case .apiKey? = server.account {
+                try OpenAIApiKeyStore.shared.clear()
+            }
             _ = try await appModel.client.logoutAccount(serverId: server.serverId)
             try await appModel.restartLocalServer()
             refreshStoredCredentialFlags()
@@ -1494,12 +1585,52 @@ private struct SettingsConnectionAccountSection: View {
 private struct SettingsDisconnectedAccountSection: View {
     var body: some View {
         Section {
-            Text("Local Codex isn't running. ChatGPT login and API key entry require the local bridge.")
+            Text("Local tools aren't connected. Refresh the local bridge to reconnect iSH. Your saved accounts and files are kept.")
                 .litterFont(.footnote)
                 .foregroundColor(LitterTheme.textMuted)
                 .settingsRowBackground()
+            if LitterPlatform.supportsLocalRuntime {
+                SettingsLocalBridgeRefreshButton()
+            }
         } header: {
             SettingsSectionHeader("Account")
+        }
+    }
+}
+
+private struct SettingsLocalBridgeRefreshButton: View {
+    @Environment(AppModel.self) private var appModel
+    var isAccountWorking = false
+    @State private var refreshError: String?
+
+    var body: some View {
+        Button {
+            Task {
+                do { try await appModel.refreshLocalBridgeAndIsh() }
+                catch { refreshError = error.localizedDescription }
+            }
+        } label: {
+            HStack {
+                if appModel.isRefreshingLocalBridge {
+                    ProgressView().tint(LitterTheme.textPrimary)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                }
+                Text(appModel.isRefreshingLocalBridge ? "Refreshing Local Tools…" : "Refresh Local Bridge / iSH")
+            }
+            .litterFont(.body)
+            .foregroundColor(LitterTheme.textPrimary)
+        }
+        .disabled(appModel.isRefreshingLocalBridge || isAccountWorking)
+        .accessibilityIdentifier("settings.refreshLocalBridge")
+        .settingsRowBackground()
+        .alert("Couldn't Refresh Local Tools", isPresented: Binding(
+            get: { refreshError != nil },
+            set: { if !$0 { refreshError = nil } }
+        )) {
+            Button("OK", role: .cancel) { refreshError = nil }
+        } message: {
+            Text(refreshError ?? "Unknown error")
         }
     }
 }

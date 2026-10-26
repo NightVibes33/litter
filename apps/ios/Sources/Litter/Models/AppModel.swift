@@ -137,6 +137,7 @@ final class AppModel {
     private(set) var lastError: String?
     private(set) var composerPrefillRequest: ComposerPrefillRequest?
     private(set) var isRecoveringLocalServer = false
+    private(set) var isRefreshingLocalBridge = false
     private(set) var sshHostKeyChangeChallenge: SshHostKeyChangeChallenge?
 
     @ObservationIgnored private var subscription: AppStoreSubscription?
@@ -168,6 +169,7 @@ final class AppModel {
     @ObservationIgnored private var deletedThreadTombstones: Set<ThreadKey> = []
     @ObservationIgnored private var loadingTurnPageThreadKeys: Set<ThreadKey> = []
     @ObservationIgnored private var localServerRecoveryTask: Task<Void, Never>?
+    @ObservationIgnored private var localBridgeRefreshTask: Task<Void, Error>?
     private(set) var pendingHandoffTurnErrors: [ThreadKey: String] = [:]
 
     func reportHandoffTurnError(key: ThreadKey, message: String) {
@@ -587,12 +589,18 @@ final class AppModel {
             throw LocalAccountLoginFlowError.remoteServer
         }
 
-        try ChatGPTOAuthTokenStore.shared.setActiveAccountID(accountID)
-        if server.account != nil {
-            _ = try? await client.logoutAccount(serverId: serverId)
+        let tokenStore = ChatGPTOAuthTokenStore.shared
+        guard let tokens = try tokenStore.load(accountID: accountID) else {
+            throw ChatGPTOAuthError.missingStoredTokens
         }
-        await restoreStoredLocalAuthState(serverId: serverId)
-        guard snapshot?.serverSnapshot(for: serverId)?.account != nil else {
+        try await LitterPlatform.ensureLocalRuntimeReady()
+        if server.account != nil {
+            _ = try await client.logoutAccount(serverId: serverId)
+        }
+        try tokenStore.setActiveAccountID(accountID)
+        let restored = await restoreStoredLocalChatGPTAuth(serverId: serverId, storedTokens: tokens)
+        await refreshSnapshot()
+        guard restored, case .chatgpt? = snapshot?.serverSnapshot(for: serverId)?.account else {
             throw LocalAccountLoginFlowError.loginDidNotAttach
         }
     }
@@ -605,11 +613,17 @@ final class AppModel {
             throw LocalAccountLoginFlowError.remoteServer
         }
 
-        try ChatGPTOAuthTokenStore.shared.clear(accountID: accountID)
-        if server.account != nil {
-            _ = try? await client.logoutAccount(serverId: serverId)
+        let tokenStore = ChatGPTOAuthTokenStore.shared
+        let wasActive = try tokenStore.storedAccounts().contains { $0.accountID == accountID && $0.isActive }
+        let wasUsingChatGPT: Bool
+        if case .chatgpt? = server.account { wasUsingChatGPT = true } else { wasUsingChatGPT = false }
+        if wasActive && wasUsingChatGPT {
+            _ = try await client.logoutAccount(serverId: serverId)
         }
-        await restoreStoredLocalAuthState(serverId: serverId)
+        try tokenStore.clear(accountID: accountID)
+        if wasActive, wasUsingChatGPT || server.account == nil {
+            await restoreStoredLocalAuthState(serverId: serverId)
+        }
         await refreshSnapshot()
     }
 
@@ -744,11 +758,31 @@ final class AppModel {
         return LitterPlatform.localRuntimeDisplayName()
     }
 
+    func refreshLocalBridgeAndIsh() async throws {
+        guard LitterPlatform.supportsLocalRuntime else { return }
+        if let localBridgeRefreshTask {
+            return try await localBridgeRefreshTask.value
+        }
+        isRefreshingLocalBridge = true
+        localServerRecoveryTask?.cancel()
+        let task = Task {
+            try await LitterPlatform.refreshLocalRuntimeReady()
+            try await self.restartLocalServer()
+        }
+        localBridgeRefreshTask = task
+        defer {
+            localBridgeRefreshTask = nil
+            isRefreshingLocalBridge = false
+        }
+        try await task.value
+    }
+
     func restartLocalServer() async throws {
         let currentLocal = snapshot?.servers.first(where: \.isLocal)
         let serverId = currentLocal?.serverId ?? "local"
         let displayName = resolvedLocalServerDisplayName()
         try await LitterPlatform.ensureLocalRuntimeReady()
+        try Task.checkCancellation()
         serverBridge.disconnectServer(serverId: serverId)
         _ = try await serverBridge.connectLocalServer(
             serverId: serverId,
@@ -762,6 +796,7 @@ final class AppModel {
 
     func ensureLocalServerConnectedIfNeeded(reason: String) {
         guard LitterPlatform.supportsLocalRuntime else { return }
+        guard !isRefreshingLocalBridge else { return }
         guard snapshot?.servers.contains(where: \.isLocal) != true else { return }
         guard localServerRecoveryTask == nil else { return }
 
