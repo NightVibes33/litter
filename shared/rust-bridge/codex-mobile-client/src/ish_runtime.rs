@@ -44,9 +44,6 @@ pub const ISH_E_NOMEM: i32 = -9;
 pub const ISH_E_ARGS: i32 = -10;
 const BOOTSTRAP_COMMAND_TIMEOUT_MS: u64 = 10_000;
 const ROOTFS_STAMP_FILE: &str = ".litter-rootfs-id";
-const ROOTFS_ARCH_FILE: &str = "data/etc/apk/arch";
-const ROOTFS_ALPINE_RELEASE_FILE: &str = "data/etc/alpine-release";
-const ROOTFS_ROOT_HOME_DIR: &str = "data/root";
 
 impl From<ish_embed_host::IshError> for IshBootstrapError {
     fn from(err: ish_embed_host::IshError) -> Self {
@@ -121,8 +118,6 @@ pub fn bootstrap(
 
     let dest = application_support_dir.join("fs");
     extract_rootfs_if_needed(bundle_fs_path, &dest)?;
-    ensure_root_home(&dest)?;
-    sanitize_root_home_volatiles(&dest)?;
 
     let meta_db = dest.join("meta.db");
     if meta_db.exists() {
@@ -386,17 +381,12 @@ fn extract_rootfs_if_needed(source: &Path, dest: &Path) -> Result<(), IshBootstr
         ));
     }
 
+    // Match the original bootstrap: an installed fakefs is persistent user
+    // storage. Its Linux symlinks and modes live in meta.db, so walking it
+    // through host filesystem APIs can report ENOTDIR for valid Linux paths.
+    // Never replace it merely because the bundled image changed.
     if dest.is_dir() {
-        let source_identity = bundled_rootfs_identity(source)?;
-        let dest_identity = rootfs_identity(dest)?;
-        if rootfs_identity_matches(source_identity.as_ref(), dest_identity.as_ref()) {
-            return Ok(());
-        }
-        eprintln!(
-            "[ish] rootfs identity changed bundled={} installed={}",
-            display_rootfs_identity(source_identity.as_ref()),
-            display_rootfs_identity(dest_identity.as_ref())
-        );
+        return Ok(());
     }
 
     if dest.exists() {
@@ -407,51 +397,6 @@ fn extract_rootfs_if_needed(source: &Path, dest: &Path) -> Result<(), IshBootstr
     }
     replace_rootfs(source, dest)?;
     Ok(())
-}
-
-fn bundled_rootfs_identity(source: &Path) -> io::Result<Option<String>> {
-    if source.is_dir() {
-        return rootfs_identity(source);
-    }
-
-    if let Some(stamp) = read_trimmed_file(source.with_file_name("fs.version"))? {
-        return Ok(Some(format!("stamp:{stamp}")));
-    }
-
-    let metadata = fs::metadata(source)?;
-    Ok(Some(format!("archive-bytes:{}", metadata.len())))
-}
-
-fn rootfs_identity(root: &Path) -> io::Result<Option<String>> {
-    if let Some(stamp) = read_rootfs_stamp(root)? {
-        return Ok(Some(format!("stamp:{stamp}")));
-    }
-
-    let arch = read_trimmed_file(root.join(ROOTFS_ARCH_FILE))?;
-    let alpine_release = read_trimmed_file(root.join(ROOTFS_ALPINE_RELEASE_FILE))?;
-    if let Some(arch) = arch.or_else(|| detect_musl_arch(root)) {
-        return Ok(Some(format!(
-            "arch:{arch};alpine:{}",
-            alpine_release.as_deref().unwrap_or("unknown")
-        )));
-    }
-
-    Ok(None)
-}
-
-fn rootfs_identity_matches(source: Option<&String>, dest: Option<&String>) -> bool {
-    match source {
-        Some(source) => dest.is_some_and(|dest| dest == source),
-        None => true,
-    }
-}
-
-fn display_rootfs_identity(identity: Option<&String>) -> &str {
-    identity.map(String::as_str).unwrap_or("unknown")
-}
-
-fn read_rootfs_stamp(root: &Path) -> io::Result<Option<String>> {
-    read_trimmed_file(root.join(ROOTFS_STAMP_FILE))
 }
 
 fn read_trimmed_file(path: impl AsRef<Path>) -> io::Result<Option<String>> {
@@ -467,23 +412,6 @@ fn read_trimmed_file(path: impl AsRef<Path>) -> io::Result<Option<String>> {
         Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(err),
     }
-}
-
-fn detect_musl_arch(root: &Path) -> Option<String> {
-    let entries = fs::read_dir(root.join("data/lib")).ok()?;
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else {
-            continue;
-        };
-        if name.contains("musl-aarch64") {
-            return Some("aarch64".to_string());
-        }
-        if name.contains("musl-x86") || name.contains("musl-i386") {
-            return Some("x86".to_string());
-        }
-    }
-    None
 }
 
 fn replace_rootfs(src: &Path, dst: &Path) -> io::Result<()> {
@@ -507,7 +435,6 @@ fn replace_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
 
     remove_path_if_exists(&tmp)?;
     copy_dir_recursive(src, &tmp)?;
-    preserve_root_home(dst, &tmp)?;
     remove_path_if_exists(dst)?;
     fs::rename(&tmp, dst)?;
     Ok(())
@@ -534,7 +461,6 @@ fn replace_archive_rootfs(src: &Path, dst: &Path) -> io::Result<()> {
         tmp.clone()
     };
 
-    preserve_root_home(dst, &extracted_root)?;
     remove_path_if_exists(dst)?;
     if extracted_root == tmp {
         fs::rename(&tmp, dst)?;
@@ -582,74 +508,6 @@ fn extract_tar_gz(archive_path: &Path, dest: &Path) -> io::Result<()> {
         }
     }
 
-    Ok(())
-}
-
-fn preserve_root_home(old_root: &Path, new_root: &Path) -> io::Result<()> {
-    let old_home = old_root.join(ROOTFS_ROOT_HOME_DIR);
-    let old_meta = match fs::symlink_metadata(&old_home) {
-        Ok(meta) => meta,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(err) => return Err(err),
-    };
-    if !old_meta.is_dir() {
-        return Ok(());
-    }
-
-    let new_home = new_root.join(ROOTFS_ROOT_HOME_DIR);
-    remove_path_if_exists(&new_home)?;
-    if let Some(parent) = new_home.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    copy_dir_recursive(&old_home, &new_home)?;
-    quarantine_root_home_volatiles(&new_home)?;
-    eprintln!("[ish] preserved /root across rootfs replacement");
-    Ok(())
-}
-
-fn ensure_root_home(rootfs: &Path) -> io::Result<()> {
-    let home = rootfs.join(ROOTFS_ROOT_HOME_DIR);
-    if !home.exists() {
-        eprintln!("[ish] extracted rootfs was missing /root; creating it before kernel boot");
-        fs::create_dir_all(&home)?;
-    }
-    if home.is_dir() {
-        let mut perms = fs::metadata(&home)?.permissions();
-        perms.set_mode(0o700);
-        if let Err(err) = fs::set_permissions(&home, perms) {
-            eprintln!("[ish] chmod 0700 on /root failed: {err}");
-        }
-    }
-    Ok(())
-}
-
-fn sanitize_root_home_volatiles(rootfs: &Path) -> io::Result<()> {
-    let home = rootfs.join(ROOTFS_ROOT_HOME_DIR);
-    if home.is_dir() {
-        quarantine_root_home_volatiles(&home)?;
-    }
-    Ok(())
-}
-
-fn quarantine_root_home_volatiles(home: &Path) -> io::Result<()> {
-    let quarantine = home.join(".litter").join("preserved-root");
-    for volatile in [".litter-buildkit", "builds", "litter"] {
-        let path = home.join(volatile);
-        if fs::symlink_metadata(&path).is_err() {
-            continue;
-        }
-        fs::create_dir_all(&quarantine)?;
-        let mut target = quarantine.join(volatile);
-        if target.exists() {
-            target = quarantine.join(format!("{}-{}", volatile, std::process::id()));
-        }
-        if let Err(err) = fs::rename(&path, &target) {
-            eprintln!("[ish] failed to quarantine /root/{volatile}: {err}; removing");
-            remove_path_if_exists(&path)?;
-        } else {
-            eprintln!("[ish] quarantined /root/{volatile} before fakefs boot");
-        }
-    }
     Ok(())
 }
 
