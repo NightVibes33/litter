@@ -2,17 +2,17 @@
 +++ b/codex-rs/keyring-store/Cargo.toml
 @@ -12,8 +12,8 @@
  tracing = { workspace = true }
- 
+
  [target.'cfg(target_os = "linux")'.dependencies]
 -secret-service = "4"
 -keyring = { workspace = true, features = ["linux-native-async-persistent"] }
 +secret-service = { package = "dbus-secret-service", version = "4.1" }
 +keyring = { workspace = true, features = ["linux-native-sync-persistent", "vendored"] }
- 
+
  [target.'cfg(target_os = "macos")'.dependencies]
  security-framework = "3"
 @@ -30,3 +30,6 @@
- 
+
  [lib]
  doctest = false
 +
@@ -59,7 +59,7 @@
 -zip = "2.4.2"
 +zip = "9.1.1"
  zstd = "0.13"
- 
+
  wiremock = "0.6"
 --- a/codex-rs/core-plugins/src/startup_sync.rs
 +++ b/codex-rs/core-plugins/src/startup_sync.rs
@@ -71,15 +71,15 @@
 +                entry.name().unwrap_or_else(|_| "<invalid ZIP filename>".into())
              ));
          };
- 
+
 @@ -1106,13 +1106,13 @@
  }
- 
+
  #[cfg(unix)]
 -fn apply_zip_permissions(entry: &zip::read::ZipFile<'_>, output_path: &Path) -> Result<(), String> {
 +fn apply_zip_permissions<R: std::io::Read + ?Sized>(entry: &zip::read::ZipFile<'_, R>, output_path: &Path) -> Result<(), String> {
      use std::os::unix::fs::PermissionsExt;
- 
+
      let Some(mode) = entry.unix_mode() else {
          return Ok(());
      };
@@ -90,7 +90,7 @@
              output_path.display()
 @@ -1121,8 +1121,8 @@
  }
- 
+
  #[cfg(not(unix))]
 -fn apply_zip_permissions(
 -    _entry: &zip::read::ZipFile<'_>,
@@ -103,17 +103,17 @@
 +++ b/codex-rs/rmcp-client/Cargo.toml
 @@ -81,7 +81,7 @@
  libc = { workspace = true }
- 
+
  [target.'cfg(target_os = "linux")'.dependencies]
 -keyring = { workspace = true, features = ["linux-native-async-persistent"] }
 +keyring = { workspace = true, features = ["linux-native-sync-persistent", "vendored"] }
- 
+
  [target.'cfg(target_os = "macos")'.dependencies]
  keyring = { workspace = true, features = ["apple-native"] }
 --- a/codex-rs/user-verification/Cargo.toml
 +++ b/codex-rs/user-verification/Cargo.toml
 @@ -9,7 +9,7 @@
- 
+
  [dependencies]
  base64 = { workspace = true }
 -p256 = { version = "0.13", default-features = false, features = ["arithmetic", "pkcs8", "std"] }
@@ -123,17 +123,26 @@
  tracing = { workspace = true }
 @@ -24,7 +24,7 @@
  security-framework-sys = "2.15"
- 
+
  [dev-dependencies]
 -p256 = { version = "0.13", features = ["ecdsa"] }
 +p256 = { version = "0.14", features = ["ecdsa"] }
  pretty_assertions = { workspace = true }
  tempfile = { workspace = true }
- 
+
 --- a/codex-rs/core-plugins/src/command_migration.rs
 +++ b/codex-rs/core-plugins/src/command_migration.rs
+@@ -314,7 +314,7 @@
+ }
+
+ fn parse_command_description(raw_frontmatter: &str) -> Option<String> {
+-    let parsed: YamlValue = serde_yaml::from_str(raw_frontmatter).ok()?;
++    let parsed: YamlValue = serde_yaml::from_str_value(raw_frontmatter).ok()?;
+     let mapping = parsed.as_mapping()?;
+     mapping.iter().find_map(|(key, value)| {
+         if key.as_str()?.trim() == "description" {
 @@ -327,10 +327,10 @@
- 
+
  fn yaml_scalar(value: &YamlValue) -> Option<String> {
      match value {
 -        YamlValue::String(value) => Some(value.trim().to_string()),
@@ -149,8 +158,17 @@
      }
 --- a/codex-rs/external-agent-migration/src/subagents.rs
 +++ b/codex-rs/external-agent-migration/src/subagents.rs
+@@ -164,7 +164,7 @@
+ fn parse_frontmatter(
+     raw_frontmatter: &str,
+ ) -> (BTreeMap<String, FrontmatterValue>, Option<String>) {
+-    let parsed: YamlValue = match serde_yaml::from_str(raw_frontmatter) {
++    let parsed: YamlValue = match serde_yaml::from_str_value(raw_frontmatter) {
+         Ok(parsed) => parsed,
+         Err(err) => return (BTreeMap::new(), Some(err.to_string())),
+     };
 @@ -188,10 +188,10 @@
- 
+
  fn frontmatter_value_from_yaml(value: &YamlValue) -> FrontmatterValue {
      match value {
 -        YamlValue::String(value) => FrontmatterValue::Scalar(value.trim().to_string()),

@@ -28,6 +28,14 @@ fn yaml_metadata_roundtrips_unicode_and_typed_values() {
 }
 
 #[test]
+fn yaml_frontmatter_value_resolves_anchors_before_scalar_matching() {
+    let value =
+        serde_yaml::from_str_value("name: &label 'Alley Cat'\ndescription: *label\n").unwrap();
+    assert_eq!(value["description"].as_str(), Some("Alley Cat"));
+    assert!(serde_yaml::from_str_value("loop: &loop [*loop]\n").is_err());
+}
+
+#[test]
 fn toml_metadata_preserves_legacy_parser_entrypoint_and_errors() {
     let source = "name = 'Alley Cat'\nenabled = true\nvalues = [1, 7]\n";
     let parsed: Metadata = basic_toml::from_str(source).unwrap();
