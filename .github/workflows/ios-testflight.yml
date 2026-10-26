@@ -1,4 +1,5 @@
 # CI runner policy validated: macos-26-intel app runner
+# Requested release includes account refresh and persistent iSH recovery fixes.
 name: iOS TestFlight Release
 
 on:
