@@ -27,11 +27,11 @@ class NyxianObjCImportsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             manager = root / "PEUserspaceManager.m"
-            manager.write_text("#import <Nyxian-Swift.h>\\n")
+            manager.write_text("#import <Nyxian-Swift.h>\n")
             consumer = root / "LDEApplicationWorkspaceService.m"
             consumer.write_text(
-                "#import <LiveShim/LiveShimSyscall.h>\\n"
-                "int open_app(void) { return liveshim_syscall(1, 2); }\\n"
+                "#import <LiveShim/LiveShimSyscall.h>\n"
+                "int open_app(void) { return liveshim_syscall(1, 2); }\n"
             )
             with patch.object(PATCH, "SOURCE", manager), patch.object(
                 PATCH, "SYSCALL_CONSUMERS", (consumer,)

@@ -30,7 +30,7 @@ def verify_recursive_submodules():
     status = git("submodule", "status", "--recursive")
     missing = [line for line in status.splitlines() if line and line[0] in "-+U"]
     if missing:
-        raise SystemExit("Uninitialized, mismatched, or conflicted upstream dependency:\\n" + "\\n".join(missing))
+        raise SystemExit("Uninitialized, mismatched, or conflicted upstream dependency:\n" + "\n".join(missing))
     count = sum(1 for line in status.splitlines() if line.strip())
     print(f"verified all {count} recursive upstream dependency revisions")
 
