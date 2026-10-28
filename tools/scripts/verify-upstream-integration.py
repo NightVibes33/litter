@@ -26,6 +26,14 @@ def verify_gitlink(section, path_key):
         raise SystemExit(f"{section}: checked-out revision {actual} != {expected}")
     print(f"{section}: verified pinned upstream at {expected[:12]}")
 
+def verify_recursive_submodules():
+    status = git("submodule", "status", "--recursive")
+    missing = [line for line in status.splitlines() if line and line[0] in "-+U"]
+    if missing:
+        raise SystemExit("Uninitialized, mismatched, or conflicted upstream dependency:\\n" + "\\n".join(missing))
+    count = sum(1 for line in status.splitlines() if line.strip())
+    print(f"verified all {count} recursive upstream dependency revisions")
+
 def required(rel):
     path = ROOT / rel
     if not path.is_file():
@@ -34,6 +42,7 @@ def required(rel):
 
 verify_gitlink("nyxian", "embedded_path")
 verify_gitlink("sidestore", "upstream_path")
+verify_recursive_submodules()
 for rel in (
     "ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompiler.h",
     "ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit/MobileDevelopmentKit.h",

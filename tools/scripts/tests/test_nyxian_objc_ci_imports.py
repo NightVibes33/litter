@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[3]
 SPEC = importlib.util.spec_from_file_location(
@@ -15,6 +16,31 @@ SPEC.loader.exec_module(PATCH)
 
 
 class NyxianObjCImportsTests(unittest.TestCase):
+    def test_every_syscall_consumer_includes_liveprocess_workspace_service(self):
+        consumers = {path.as_posix() for path in PATCH.SYSCALL_CONSUMERS}
+        self.assertIn(
+            "ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationWorkspaceService.m",
+            consumers,
+        )
+
+    def test_patch_run_updates_each_declared_consumer_without_changing_syscalls(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manager = root / "PEUserspaceManager.m"
+            manager.write_text("#import <Nyxian-Swift.h>\\n")
+            consumer = root / "LDEApplicationWorkspaceService.m"
+            consumer.write_text(
+                "#import <LiveShim/LiveShimSyscall.h>\\n"
+                "int open_app(void) { return liveshim_syscall(1, 2); }\\n"
+            )
+            with patch.object(PATCH, "SOURCE", manager), patch.object(
+                PATCH, "SYSCALL_CONSUMERS", (consumer,)
+            ):
+                PATCH.main()
+            result = consumer.read_text()
+            self.assertIn("@import LiveShim;", result)
+            self.assertIn("liveshim_syscall(1, 2)", result)
+
     def test_explicit_module_import_for_both_upstream_header_styles(self):
         for directive in ("import", "include"):
             source = f"#import <Foundation/Foundation.h>\n#{directive} <LiveShim/LiveShimSyscall.h>\nvoid run(void) {{ liveshim_syscall(1, 2); }}\n"

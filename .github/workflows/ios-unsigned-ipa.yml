@@ -147,6 +147,7 @@ jobs:
       - name: Verify Nyxian source import
         run: |
           set -euo pipefail
+          python3 tools/scripts/verify-upstream-integration.py
           tools/scripts/verify-nyxian-source-import.sh
 
       - name: Patch Nyxian Objective-C imports for Xcode

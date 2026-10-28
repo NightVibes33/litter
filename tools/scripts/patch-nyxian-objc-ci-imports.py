@@ -11,7 +11,13 @@ REQUIRED_IMPORTS = (
 )
 ANCHOR = "#import <Nyxian-Swift.h>"
 SHIMS = SOURCE.parent / "Shims"
-SYSCALL_CONSUMERS = ("posix_spawn.m", "vfork.m", "environment.m", "application.m")
+SYSCALL_CONSUMERS = (
+    SHIMS / "posix_spawn.m",
+    SHIMS / "vfork.m",
+    SHIMS / "environment.m",
+    SHIMS / "application.m",
+    Path("ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationWorkspaceService.m"),
+)
 
 
 def patch_liveshim_module_import(text: str) -> str:
@@ -36,8 +42,7 @@ def main() -> None:
         if line not in text:
             raise SystemExit(f"failed to install required import: {line}")
     print(f"Nyxian Objective-C imports ready: {SOURCE}")
-    for name in SYSCALL_CONSUMERS:
-        source = SHIMS / name
+    for source in SYSCALL_CONSUMERS:
         text = source.read_text(encoding="utf-8")
         try:
             patched = patch_liveshim_module_import(text)
