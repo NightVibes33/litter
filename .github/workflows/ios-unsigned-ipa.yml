@@ -58,6 +58,7 @@ on:
       - 'tools/scripts/upload-buildkit-assets-release.sh'
       - 'tools/scripts/vendor-nyxian.sh'
       - 'tools/scripts/verify-nyxian-source-import.sh'
+      - 'tools/scripts/verify-upstream-integration.py'
       - 'tools/scripts/verify-kittystore-integration.sh'
       - 'tools/scripts/verify-altstore-source.py'
       - 'tools/scripts/build-nyxian-buildkit-assets.sh'
