@@ -32,6 +32,8 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '26.3'
+      - name: Verify pinned Nyxian and recursive upstream dependencies
+        run: python3 tools/scripts/verify-upstream-integration.py
       - name: Resolve pinned source and host revisions
         id: source
         run: |
