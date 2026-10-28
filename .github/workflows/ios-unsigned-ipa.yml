@@ -72,8 +72,8 @@ permissions:
 
 concurrency:
   group: ios-unsigned-ipa-${{ github.ref }}
-  # Preserve normal cache-warming runs. A repair commit may explicitly replace
-  # an older revision already known to fail, so it cannot block the repaired IPA.
+  # Preserve normal cache-warming runs. A repair commit can explicitly replace
+  # a stale or known-broken queued revision so validation can finish on this source.
   cancel-in-progress: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[replace-broken-unsigned]') }}
 
 jobs:
