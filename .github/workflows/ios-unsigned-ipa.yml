@@ -71,7 +71,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: ios-unsigned-ipa-${{ github.ref }}
+  group: ios-unsigned-ipa-pinned-source-${{ github.ref }}
   # Preserve normal cache-warming runs. A repair commit can explicitly replace
   # a stale or known-broken queued revision so validation can finish on this source.
   cancel-in-progress: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[replace-broken-unsigned]') }}
