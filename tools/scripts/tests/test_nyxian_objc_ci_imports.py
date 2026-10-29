@@ -20,6 +20,7 @@ class NyxianObjCImportsTests(unittest.TestCase):
         consumers = {path.as_posix() for path in PATCH.SYSCALL_CONSUMERS}
         self.assertIn(
             "ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationWorkspaceService.m",
+            "ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationWorkspace.m",
             consumers,
         )
 

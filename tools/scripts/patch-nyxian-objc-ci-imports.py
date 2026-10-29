@@ -17,6 +17,7 @@ SYSCALL_CONSUMERS = (
     SHIMS / "environment.m",
     SHIMS / "application.m",
     Path("ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationWorkspaceService.m"),
+    Path("ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationWorkspace.m"),
 )
 
 
